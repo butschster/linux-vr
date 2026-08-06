@@ -71,9 +71,9 @@ public class PanelActivity extends Activity {
                 FrameLayout.LayoutParams.MATCH_PARENT,
                 FrameLayout.LayoutParams.MATCH_PARENT));
         FrameLayout.LayoutParams barParams = new FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.WRAP_CONTENT,
                 FrameLayout.LayoutParams.WRAP_CONTENT);
-        barParams.gravity = Gravity.BOTTOM;
+        barParams.gravity = Gravity.BOTTOM | Gravity.END;
         root.addView(bar, barParams);
         setContentView(root);
 

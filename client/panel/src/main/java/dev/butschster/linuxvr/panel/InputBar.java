@@ -12,8 +12,10 @@ import android.widget.Button;
 import android.widget.EditText;
 import android.widget.LinearLayout;
 
+import java.io.BufferedReader;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.net.Socket;
@@ -38,6 +40,8 @@ public class InputBar extends LinearLayout {
 
     private final EditText field;
     private final Button mic;
+    private final Button toggle;
+    private boolean expanded = false;
 
     private String host = "";
     private volatile boolean recording = false;
@@ -70,6 +74,38 @@ public class InputBar extends LinearLayout {
         mic.setText("speak");
         mic.setOnClickListener(v -> toggleRecording());
         addView(mic);
+
+        // Collapsed by default. The bar is used a few times an hour and the
+        // desktop behind it all the time, so it must not sit on top of a
+        // terminal permanently.
+        toggle = new Button(context);
+        toggle.setText("\u2328");          // keyboard glyph
+        toggle.setOnClickListener(v -> setExpanded(!expanded));
+        addView(toggle);
+
+        setExpanded(false);
+    }
+
+    private void setExpanded(boolean value) {
+        expanded = value;
+        field.setVisibility(value ? VISIBLE : GONE);
+        mic.setVisibility(value ? VISIBLE : GONE);
+        toggle.setText(value ? "\u00d7" : "\u2328");
+        setBackgroundColor(value ? Color.argb(190, 20, 20, 24) : Color.TRANSPARENT);
+
+        // ViewGroup.LayoutParams, not LayoutParams: inside a LinearLayout
+        // subclass the bare name resolves to LinearLayout.LayoutParams, but our
+        // own params come from the parent, which is a FrameLayout. Casting to
+        // the inherited name throws ClassCastException on the first tap.
+        android.view.ViewGroup.LayoutParams lp = getLayoutParams();
+        if (lp != null) {
+            lp.width = value ? android.view.ViewGroup.LayoutParams.MATCH_PARENT
+                             : android.view.ViewGroup.LayoutParams.WRAP_CONTENT;
+            setLayoutParams(lp);
+        }
+        if (value) {
+            field.requestFocus();
+        }
     }
 
     public void setHost(String host) {
@@ -149,12 +185,14 @@ public class InputBar extends LinearLayout {
 
         byte[] pcm = captured.toByteArray();
         Log.i(TAG, "captured " + (pcm.length / (SAMPLE_RATE * 2.0)) + "s of audio");
+        showStatus("recognising\u2026");
         sendAudio(pcm);
         stopUi();
     }
 
     private void sendAudio(byte[] pcm) {
         if (pcm.length == 0) return;
+        showStatus("recognising\u2026");
         try (Socket socket = new Socket()) {
             socket.connect(new InetSocketAddress(host, VOICE_PORT), 3000);
             OutputStream out = socket.getOutputStream();
@@ -162,10 +200,30 @@ public class InputBar extends LinearLayout {
             out.write(pcm);
             out.flush();
             socket.shutdownOutput();
-            socket.getInputStream().read();
+
+            // Recognition takes seconds, and silence for seconds is
+            // indistinguishable from a broken feature.
+            socket.setSoTimeout(60000);
+            BufferedReader in = new BufferedReader(
+                    new InputStreamReader(socket.getInputStream(), "UTF-8"));
+            String text = in.readLine();
+            Log.i(TAG, "recognised: " + text);
+            showStatus(text == null || text.isEmpty() ? "nothing recognised" : text);
         } catch (IOException e) {
             Log.w(TAG, "cannot send audio: " + e.getMessage());
+            showStatus("recognition failed");
         }
+    }
+
+    /**
+     * Shows what came back where the user is already looking.
+     *
+     * The text is put in the hint rather than in the field: the host has
+     * already inserted it at the cursor, and text sitting in the field invites
+     * pressing Enter, which would insert it a second time.
+     */
+    private void showStatus(String text) {
+        post(() -> field.setHint(text));
     }
 
     private void stopUi() {

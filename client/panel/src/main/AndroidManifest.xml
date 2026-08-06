@@ -50,6 +50,24 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        <!-- Controls in a window of their own rather than over the desktop:
+             the shell already places and stacks windows, so the user puts this
+             one where it does not get in the way. -->
+        <activity
+            android:name=".ControlActivity"
+            android:exported="false"
+            android:documentLaunchMode="always"
+            android:resizeableActivity="true"
+            android:taskAffinity="dev.butschster.linuxvr.panel.controls"
+            android:label="linux-vr controls"
+            android:configChanges="density|keyboard|keyboardHidden|navigation|orientation|screenLayout|screenSize|uiMode">
+            <layout
+                android:defaultWidth="700dp"
+                android:defaultHeight="120dp"
+                android:minWidth="360dp"
+                android:minHeight="90dp"
+                android:gravity="bottom" />
+        </activity>
     </application>
 
 </manifest>

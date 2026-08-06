@@ -136,6 +136,14 @@ public class InputBar extends LinearLayout {
         this.host = host;
     }
 
+    /** In its own window there is nothing to hide from, so the field stays out. */
+    public void setAlwaysOpen(boolean value) {
+        if (value) {
+            setExpanded(true);
+            toggle.setVisibility(GONE);
+        }
+    }
+
     // ----------------------------------------------------------------- typing
 
     private void sendText(String text) {
@@ -232,7 +240,15 @@ public class InputBar extends LinearLayout {
                     new InputStreamReader(socket.getInputStream(), "UTF-8"));
             String text = in.readLine();
             Log.i(TAG, "recognised: " + text);
-            showStatus(text == null || text.isEmpty() ? "nothing recognised" : text);
+            if (text == null || text.isEmpty()) {
+                showStatus("nothing recognised");
+            } else {
+                // Feedback only. The host has already inserted it where the
+                // focus is, which is also where it gets corrected if a word
+                // came out wrong — a review step here would double the time
+                // every dictation takes.
+                showStatus(text);
+            }
         } catch (IOException e) {
             Log.w(TAG, "cannot send audio: " + e.getMessage());
             showStatus("recognition failed");

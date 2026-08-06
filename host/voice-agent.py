@@ -27,7 +27,10 @@ this repository:
 Wire protocol, one connection per utterance or per typed string:
 
     "pcm <rate> <channels>\\n" + raw signed 16-bit samples
-        transcribe, then insert the result
+        transcribe and insert at the cursor, then return the text so the client
+        can show what was heard. Insertion is direct on purpose: a shell line or
+        a text field is itself the place to fix a misheard word, and a review
+        step in between turns two seconds of dictation into four.
 
     "text\\n" + UTF-8
         insert as is — this is the on-screen keyboard path

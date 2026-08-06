@@ -60,27 +60,9 @@ public class PanelActivity extends Activity {
         StreamView view = new StreamView(this);
         view.configure(host, monitor);
 
-        InputBar bar = new InputBar(this);
-        bar.setHost(host);
-
-        // The bar floats over the desktop rather than shrinking it: giving up a
-        // strip of a screen whose readability was measured to the degree would
-        // be a poor trade for a control used a few times an hour.
-        FrameLayout root = new FrameLayout(this);
-        root.addView(view, new FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.MATCH_PARENT,
-                FrameLayout.LayoutParams.MATCH_PARENT));
-        FrameLayout.LayoutParams barParams = new FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.WRAP_CONTENT,
-                FrameLayout.LayoutParams.WRAP_CONTENT);
-        barParams.gravity = Gravity.BOTTOM | Gravity.END;
-        root.addView(bar, barParams);
-        setContentView(root);
-
-        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO)
-                != PackageManager.PERMISSION_GRANTED) {
-            requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO}, 1);
-        }
+        // Nothing but the desktop here. The controls live in their own window,
+        // opened alongside the monitor windows below.
+        setContentView(view);
 
         if (isFirst && !host.isEmpty() && discovered.compareAndSet(false, true)) {
             // Off the UI thread: this talks to the host.
@@ -96,10 +78,12 @@ public class PanelActivity extends Activity {
         List<Integer> indices = queryMonitors(host);
         if (indices.size() <= 1) {
             Log.i(TAG, "host reports " + indices.size() + " monitor(s), one window is enough");
+            openControlWindow();
             return;
         }
 
         Log.i(TAG, "host reports " + indices.size() + " monitors, opening the rest");
+        openControlWindow();
         for (int i = 1; i < indices.size(); i++) {
             final int monitor = indices.get(i);
             Intent intent = new Intent(this, PanelActivity.class);
@@ -114,6 +98,16 @@ public class PanelActivity extends Activity {
             });
             sleep(700);   // give the shell time to place each window
         }
+    }
+
+    private void openControlWindow() {
+        Intent intent = new Intent(this, ControlActivity.class);
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_DOCUMENT | Intent.FLAG_ACTIVITY_MULTIPLE_TASK);
+        runOnUiThread(() -> {
+            Log.i(TAG, "opening the control window");
+            startActivity(intent);
+        });
+        sleep(700);
     }
 
     private List<Integer> queryMonitors(String host) {
@@ -148,6 +142,19 @@ public class PanelActivity extends Activity {
      * Push it, do not `adb shell echo >` it: the latter creates the file mode
      * 660 owned by shell, and the app cannot read it.
      */
+    /** Shared with ControlActivity, which needs the same address. */
+    static String readHostFrom(android.content.Context context) {
+        java.io.File dir = context.getExternalFilesDir(null);
+        if (dir == null) return "";
+        java.io.File file = new java.io.File(dir, HOST_FILE);
+        try (BufferedReader reader = new BufferedReader(new FileReader(file))) {
+            String line = reader.readLine();
+            return line == null ? "" : line.trim();
+        } catch (IOException e) {
+            return "";
+        }
+    }
+
     private String readHost() {
         File dir = getExternalFilesDir(null);
         if (dir == null) return "";

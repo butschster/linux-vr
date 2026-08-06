@@ -203,19 +203,37 @@ bool XrApp::createActions() {
     aimInfo.actionType = XR_ACTION_TYPE_POSE_INPUT;
     if (!XR_CHECK(xrCreateAction(actionSet_, &aimInfo, &aimAction_))) return false;
 
+    XrActionCreateInfo gripInfo{XR_TYPE_ACTION_CREATE_INFO};
+    std::strcpy(gripInfo.actionName, "grab");
+    std::strcpy(gripInfo.localizedActionName, "Grab screen");
+    gripInfo.actionType = XR_ACTION_TYPE_FLOAT_INPUT;
+    if (!XR_CHECK(xrCreateAction(actionSet_, &gripInfo, &gripAction_))) return false;
+
+    XrActionCreateInfo recenterInfo{XR_TYPE_ACTION_CREATE_INFO};
+    std::strcpy(recenterInfo.actionName, "recenter");
+    std::strcpy(recenterInfo.localizedActionName, "Focus view");
+    recenterInfo.actionType = XR_ACTION_TYPE_BOOLEAN_INPUT;
+    if (!XR_CHECK(xrCreateAction(actionSet_, &recenterInfo, &recenterAction_))) return false;
+
     XrPath stickPath = XR_NULL_PATH;
     XrPath aPath = XR_NULL_PATH;
+    XrPath bPath = XR_NULL_PATH;
     XrPath aimPath = XR_NULL_PATH;
+    XrPath gripPath = XR_NULL_PATH;
     XrPath profilePath = XR_NULL_PATH;
     xrStringToPath(instance_, "/user/hand/right/input/thumbstick", &stickPath);
     xrStringToPath(instance_, "/user/hand/right/input/a/click", &aPath);
+    xrStringToPath(instance_, "/user/hand/right/input/b/click", &bPath);
     xrStringToPath(instance_, "/user/hand/right/input/aim/pose", &aimPath);
+    xrStringToPath(instance_, "/user/hand/right/input/squeeze/value", &gripPath);
     xrStringToPath(instance_, "/interaction_profiles/oculus/touch_controller", &profilePath);
 
     const XrActionSuggestedBinding bindings[] = {
         {thumbstickAction_, stickPath},
         {resetAction_, aPath},
+        {recenterAction_, bPath},
         {aimAction_, aimPath},
+        {gripAction_, gripPath},
     };
     XrInteractionProfileSuggestedBinding suggested{XR_TYPE_INTERACTION_PROFILE_SUGGESTED_BINDING};
     suggested.interactionProfile = profilePath;
@@ -234,9 +252,82 @@ bool XrApp::createActions() {
     spaceInfo.poseInActionSpace.orientation.w = 1.0f;
     if (!XR_CHECK(xrCreateActionSpace(session_, &spaceInfo, &aimSpace_))) return false;
 
+    // VIEW space tracks the head. Needed so focus view can put the screen
+    // wherever the user is actually looking.
+    XrReferenceSpaceCreateInfo viewInfo{XR_TYPE_REFERENCE_SPACE_CREATE_INFO};
+    viewInfo.referenceSpaceType = XR_REFERENCE_SPACE_TYPE_VIEW;
+    viewInfo.poseInReferenceSpace.orientation.w = 1.0f;
+    if (!XR_CHECK(xrCreateReferenceSpace(session_, &viewInfo, &viewSpace_))) return false;
+
     actionsAttached_ = true;
-    LOGI("input ready: stick — distance and width, A — reset, ray — pointer");
+    LOGI("input ready: stick — distance/width, grip — drag, B — focus view, A — reset");
     return true;
+}
+
+// Focus view: put the screen straight in front of wherever the head is
+// pointing, at eye level. Distance and width are left alone — the user tuned
+// those deliberately, and resetting them here would be a surprise.
+void XrApp::recenter(XrTime time) {
+    XrSpaceLocation head{XR_TYPE_SPACE_LOCATION};
+    if (XR_FAILED(xrLocateSpace(viewSpace_, space_, time, &head))) return;
+
+    const XrSpaceLocationFlags needed =
+        XR_SPACE_LOCATION_POSITION_VALID_BIT | XR_SPACE_LOCATION_ORIENTATION_VALID_BIT;
+    if ((head.locationFlags & needed) != needed) return;
+
+    const XrQuaternionf &q = head.pose.orientation;
+    const float fx = -2.0f * (q.x * q.z + q.w * q.y);
+    const float fz = -(1.0f - 2.0f * (q.x * q.x + q.y * q.y));
+
+    // Only the horizontal component of the gaze is used. Taking pitch into
+    // account would tilt the screen, which is never what the user wants.
+    geometry.yaw = std::atan2(fx, -fz);
+    geometry.heightOffset = head.pose.position.y;
+
+    LOGI("focus view: yaw %.0f deg, height %.2f m", geometry.yaw * 180.0f / kPi,
+         geometry.heightOffset);
+}
+
+// Dragging follows the pointer ray rather than the hand position: the screen
+// is several metres of arc away, so hand translation is a poor control for it
+// while the ray direction maps onto the surface one to one.
+void XrApp::updateDrag(XrTime time, bool gripHeld) {
+    if (!gripHeld) {
+        dragging_ = false;
+        return;
+    }
+
+    XrSpaceLocation loc{XR_TYPE_SPACE_LOCATION};
+    if (XR_FAILED(xrLocateSpace(aimSpace_, space_, time, &loc))) return;
+    const XrSpaceLocationFlags needed =
+        XR_SPACE_LOCATION_POSITION_VALID_BIT | XR_SPACE_LOCATION_ORIENTATION_VALID_BIT;
+    if ((loc.locationFlags & needed) != needed) return;
+
+    const XrQuaternionf &q = loc.pose.orientation;
+    const float dx = -2.0f * (q.x * q.z + q.w * q.y);
+    const float dy = -2.0f * (q.y * q.z - q.w * q.x);
+    const float dz = -(1.0f - 2.0f * (q.x * q.x + q.y * q.y));
+
+    const float pointerYaw = std::atan2(dx, -dz);
+    const float pointerHeight = dy * geometry.radius;
+
+    if (!dragging_) {
+        dragging_ = true;
+        dragStartPointerYaw_ = pointerYaw;
+        dragStartPointerHeight_ = pointerHeight;
+        dragStartLayerYaw_ = geometry.yaw;
+        dragStartLayerHeight_ = geometry.heightOffset;
+        return;
+    }
+
+    float deltaYaw = pointerYaw - dragStartPointerYaw_;
+    // Unwrap across the +/-pi seam, otherwise the screen jumps a full turn
+    // when the ray crosses straight behind the user.
+    while (deltaYaw > kPi) deltaYaw -= 2.0f * kPi;
+    while (deltaYaw < -kPi) deltaYaw += 2.0f * kPi;
+
+    geometry.yaw = dragStartLayerYaw_ + deltaYaw;
+    geometry.heightOffset = dragStartLayerHeight_ + (pointerHeight - dragStartPointerHeight_);
 }
 
 bool XrApp::createCursor() {
@@ -345,8 +436,12 @@ void XrApp::updateCursor(XrTime time) {
     const float hy = p.y + t * dy;
     const float hz = p.z + t * dz;
 
-    // The hit angle is measured from -Z, where the centre of the layer faces
-    const float angle = std::atan2(hx, -hz);
+    // The hit angle is measured relative to where the layer centre faces,
+    // which is the layer's own yaw and not necessarily straight ahead.
+    float angle = std::atan2(hx, -hz) - geometry.yaw;
+    while (angle > kPi) angle -= 2.0f * kPi;
+    while (angle < -kPi) angle += 2.0f * kPi;
+
     const float halfAngle = geometry.horizontalFovDegrees * kPi / 180.0f * 0.5f;
     if (angle < -halfAngle || angle > halfAngle) return;
 
@@ -366,13 +461,14 @@ void XrApp::updateCursor(XrTime time) {
     const float scale = (R - lift) / R;
     cursorPose_.position = {hx * scale, hy, hz * scale};
 
-    // Turn the cursor plane to face the axis of the cylinder
-    const float yaw = -angle;
+    // Turn the cursor plane to face the axis of the cylinder. The angle here
+    // must be the world one, so the layer's own yaw goes back in.
+    const float yaw = -(angle + geometry.yaw);
     cursorPose_.orientation = {0.0f, std::sin(yaw * 0.5f), 0.0f, std::cos(yaw * 0.5f)};
     cursorVisible_ = true;
 }
 
-void XrApp::applyInput() {
+void XrApp::applyInput(XrTime time) {
     if (!actionsAttached_ || !sessionRunning_) return;
 
     XrActiveActionSet active{actionSet_, XR_NULL_PATH};
@@ -382,6 +478,24 @@ void XrApp::applyInput() {
     if (XR_FAILED(xrSyncActions(session_, &sync))) return;
 
     XrActionStateGetInfo get{XR_TYPE_ACTION_STATE_GET_INFO};
+
+    get.action = recenterAction_;
+    XrActionStateBoolean recenterState{XR_TYPE_ACTION_STATE_BOOLEAN};
+    if (XR_SUCCEEDED(xrGetActionStateBoolean(session_, &get, &recenterState)) &&
+        recenterState.isActive && recenterState.currentState &&
+        recenterState.changedSinceLastSync) {
+        recenter(time);
+    }
+
+    get.action = gripAction_;
+    XrActionStateFloat gripState{XR_TYPE_ACTION_STATE_FLOAT};
+    bool gripHeld = false;
+    if (XR_SUCCEEDED(xrGetActionStateFloat(session_, &get, &gripState)) && gripState.isActive) {
+        // Hysteresis-free threshold is fine here: a half-squeezed grip that
+        // flickers would be more annoying than one that needs a firm press.
+        gripHeld = gripState.currentState > 0.7f;
+    }
+    updateDrag(time, gripHeld);
 
     get.action = resetAction_;
     XrActionStateBoolean resetState{XR_TYPE_ACTION_STATE_BOOLEAN};
@@ -475,7 +589,7 @@ void XrApp::renderFrame() {
     XrFrameBeginInfo beginInfo{XR_TYPE_FRAME_BEGIN_INFO};
     if (!XR_CHECK(xrBeginFrame(session_, &beginInfo))) return;
 
-    applyInput();
+    applyInput(frameState.predictedDisplayTime);
 
     std::vector<XrCompositionLayerBaseHeader *> layers;
     XrCompositionLayerCylinderKHR cylinder{XR_TYPE_COMPOSITION_LAYER_CYLINDER_KHR};
@@ -496,8 +610,10 @@ void XrApp::renderFrame() {
         cylinder.subImage.imageArrayIndex = 0;
 
         // The cylinder axis passes through the pose along its +Y. The visible
-        // surface ends up at distance `radius` along -Z.
-        cylinder.pose.orientation = {0.0f, 0.0f, 0.0f, 1.0f};
+        // surface ends up at distance `radius` along -Z, so rotating the pose
+        // about Y is what moves the screen around the user.
+        cylinder.pose.orientation = {0.0f, std::sin(geometry.yaw * 0.5f), 0.0f,
+                                     std::cos(geometry.yaw * 0.5f)};
         cylinder.pose.position = {0.0f, geometry.heightOffset, 0.0f};
         cylinder.radius = geometry.radius;
         cylinder.centralAngle = geometry.horizontalFovDegrees * kPi / 180.0f;
@@ -557,6 +673,7 @@ void XrApp::shutdown() {
     if (cursorSwapchain_ != XR_NULL_HANDLE) xrDestroySwapchain(cursorSwapchain_);
     if (videoSwapchain_ != XR_NULL_HANDLE) xrDestroySwapchain(videoSwapchain_);
     if (aimSpace_ != XR_NULL_HANDLE) xrDestroySpace(aimSpace_);
+    if (viewSpace_ != XR_NULL_HANDLE) xrDestroySpace(viewSpace_);
     if (space_ != XR_NULL_HANDLE) xrDestroySpace(space_);
     if (actionSet_ != XR_NULL_HANDLE) xrDestroyActionSet(actionSet_);
     if (session_ != XR_NULL_HANDLE) xrDestroySession(session_);

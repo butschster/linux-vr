@@ -66,10 +66,20 @@ echo
 #
 # -bf 0 is mandatory: B-frames add reordering latency, and their bitrate saving
 # is not needed here.
-exec sudo ffmpeg -hide_banner -loglevel warning -stats \
-    -device "$DEVICE" -f kmsgrab -framerate "$FPS" "${crtc_args[@]}" -i - \
-    -vf "hwmap=derive_device=vaapi,scale_vaapi=w=${WIDTH}:h=${HEIGHT}:format=nv12" \
-    -c:v h264_vaapi -profile:v high -rc_mode CQP -global_quality "$QP" \
-    -bf 0 -g "$FPS" \
-    -flags +low_delay -fflags +nobuffer -flush_packets 1 \
-    -f h264 "tcp://0.0.0.0:${PORT}?listen=1&listen_timeout=-1"
+# ffmpeg with listen=1 serves exactly one connection and exits when the client
+# goes away, so every client restart would otherwise need the host restarted
+# too. Loop instead.
+trap 'echo; echo "stopping"; exit 0' INT TERM
+
+while true; do
+    echo "waiting for a client on :${PORT}"
+    sudo ffmpeg -hide_banner -loglevel warning -stats \
+        -device "$DEVICE" -f kmsgrab -framerate "$FPS" "${crtc_args[@]}" -i - \
+        -vf "hwmap=derive_device=vaapi,scale_vaapi=w=${WIDTH}:h=${HEIGHT}:format=nv12" \
+        -c:v h264_vaapi -profile:v high -rc_mode CQP -global_quality "$QP" \
+        -bf 0 -g "$FPS" \
+        -flags +low_delay -fflags +nobuffer -flush_packets 1 \
+        -f h264 "tcp://0.0.0.0:${PORT}?listen=1&listen_timeout=-1" || true
+    echo "client disconnected"
+    sleep 1
+done

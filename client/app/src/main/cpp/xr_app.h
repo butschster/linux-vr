@@ -41,6 +41,11 @@ struct LayerGeometry {
 
     // Vertical offset of the centre relative to the reference point, metres
     float heightOffset = 0.0f;
+
+    // Horizontal placement around the viewer, radians. The screen rotates
+    // around the user rather than sliding sideways: for a curved surface that
+    // is the only way to keep every point of it the same distance away.
+    float yaw = 0.0f;
 };
 
 // An OpenXR session with a monitor layer.
@@ -97,8 +102,21 @@ private:
     XrAction thumbstickAction_ = XR_NULL_HANDLE;
     XrAction resetAction_ = XR_NULL_HANDLE;
     XrAction aimAction_ = XR_NULL_HANDLE;
+    XrAction gripAction_ = XR_NULL_HANDLE;
+    XrAction recenterAction_ = XR_NULL_HANDLE;
     XrSpace aimSpace_ = XR_NULL_HANDLE;
+    XrSpace viewSpace_ = XR_NULL_HANDLE;
     bool actionsAttached_ = false;
+
+    // Drag state, valid only while the grip is held
+    bool dragging_ = false;
+    float dragStartPointerYaw_ = 0.0f;
+    float dragStartPointerHeight_ = 0.0f;
+    float dragStartLayerYaw_ = 0.0f;
+    float dragStartLayerHeight_ = 0.0f;
+
+    void updateDrag(XrTime time, bool gripHeld);
+    void recenter(XrTime time);
 
     // The cursor lives in its own layer rather than being drawn into the
     // desktop image. The compositor updates it at headset rate, so the pointer
@@ -113,7 +131,7 @@ private:
 
     bool createActions();
     bool createCursor();
-    void applyInput();
+    void applyInput(XrTime time);
     // Intersects the controller ray with the cylinder. Produces hit
     // coordinates in the 0..1 range — that is the mouse position on the desktop.
     void updateCursor(XrTime time);

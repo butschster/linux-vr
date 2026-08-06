@@ -113,6 +113,18 @@ adb shell dumpsys power | grep mWakefulness=
 **Gradle caches toolchain detection.** After installing a JDK you need
 `./gradlew --stop`, otherwise the same error repeats on a fixed system.
 
+## Never answer platform questions from memory
+
+Horizon OS changes fast, gates capabilities behind manifest declarations that
+are easy to forget, and diverges from the base OpenXR specification. Two claims
+made from memory in this project were simply false — see
+[`docs/references.md`](docs/references.md) for which and why.
+
+Before stating how the platform behaves, consult
+[Meta's agentic tools](https://github.com/meta-quest/agentic-tools) or the
+documentation, or measure on the device. `docs/references.md` lists where to
+look for each topic.
+
 ## Platform traps
 
 The full list is [`docs/gotchas.md`](docs/gotchas.md); add to it as you find

@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <!-- No VR features are declared on purpose. Declaring headtracking or an
+         immersive intent category is what makes Horizon OS launch an app
+         exclusively; a plain 2D app gets a window instead, and windows
+         multitask. -->
+
+    <application
+        android:allowBackup="false"
+        android:label="linux-vr panel"
+        android:theme="@android:style/Theme.Material.NoActionBar">
+
+        <activity
+            android:name=".PanelActivity"
+            android:exported="true"
+            android:configChanges="density|keyboard|keyboardHidden|navigation|orientation|screenLayout|screenSize|uiMode"
+            android:launchMode="singleTask">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+
+</manifest>

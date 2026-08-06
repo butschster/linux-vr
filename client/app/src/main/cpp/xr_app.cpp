@@ -567,7 +567,14 @@ void XrApp::updateCursor(XrTime time) {
     cursorPose_.orientation = {0.0f, std::sin(yaw * 0.5f), 0.0f, std::cos(yaw * 0.5f)};
     cursorVisible_ = true;
 
-    input_.sendMove(cursorU_, cursorV_);
+    // Not while dragging. The ray keeps hitting the layer as the screen moves
+    // under it, so the hit point keeps changing and the desktop pointer would
+    // be dragged along with the screen. The user then finds the system cursor
+    // nowhere near where they finally aimed, which reads as a systematic
+    // aiming error rather than as a side effect of moving the screen.
+    if (!dragging_) {
+        input_.sendMove(cursorU_, cursorV_);
+    }
 }
 
 void XrApp::applyInput(XrTime time) {

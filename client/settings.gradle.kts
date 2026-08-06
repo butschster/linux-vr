@@ -16,3 +16,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "linux-vr-client"
 include(":app")
+include(":panel")

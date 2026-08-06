@@ -1,0 +1,33 @@
+# Android / Gradle
+.gradle/
+build/
+local.properties
+*.apk
+*.aab
+*.keystore
+captures/
+
+# CMake / NDK
+.cxx/
+cmake-build-*/
+
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# Тестовые материалы — генерируются скриптами из host/, весят сотни мегабайт
+assets/
+*.mp4
+*.png
+
+# Внешние исходники — клонируются по инструкции из docs/gotchas.md
+vendor/
+
+# Секреты — сюда не должно попасть ничего, но на всякий случай
+.env
+*.pem
+*.key
+*.crt
+
+*.log

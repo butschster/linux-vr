@@ -126,6 +126,41 @@ Behaviour beats arithmetic as a suspect. One real case: dragging the screen also
 dragged the desktop pointer, because the ray kept hitting the moving layer and
 positions kept being sent. The maths was correct all along.
 
+## Terminal client
+
+Nothing here involves capture, encoding or the pointer — if the streamed desktop
+is broken, that is a different fault.
+
+**Does the agent answer at all, and is it the one you just edited?**
+
+```sh
+ss -ltnp | grep 9103          # who really holds the port
+./host/pty-agent.py --dump-context ~/repos/home/linux-vr    # what the bar would show
+```
+
+A second agent that failed to bind dies quietly while the first keeps serving,
+so an edit appears to have done nothing. Check the owner before the code.
+
+**Blank window, bar says "no host — retrying".** The client retries every two
+seconds and reports the reason; read it. Usually the agent is not running, or
+`host.txt` names the wrong address.
+
+**Bar shows nothing but the path.** The context arrived without buttons, or did
+not arrive. `--dump-context` on the host is the same code path; if it produces
+groups there and nothing appears in the headset, the fault is on the client
+side.
+
+**Wrong buttons for what is running.** The classifier reads
+`/proc/<pgid>/cmdline` of the pty's foreground process group. Reproduce on the
+host: run the tool in a terminal and check what its command line actually looks
+like — tools launched through an interpreter put the name that matters after
+`argv[0]`, and that is what `TOOL_NAMES` matches against.
+
+**Text arrives but the shell behaves oddly** — no prompt colours, missing
+aliases, `claude` warning about an inherited session. The shell's environment is
+built in `Session.start`; it is not a login shell, and Claude Code's own markers
+are stripped there.
+
 ## Self-inflicted traps
 
 **`pkill -f <pattern>` kills your own shell** when the pattern appears in your

@@ -57,6 +57,33 @@ The **Spatial SDK** is the Kotlin framework for spatial panels — the middle
 ground between a plain 2D window and a fully immersive app. Relevant if the
 panel client ever needs curved surfaces or several panels it controls itself.
 
+### Meta Spatial SDK — relevant, and the open question
+
+| | |
+|---|---|
+| [Meta-Spatial-SDK-Samples](https://github.com/meta-quest/Meta-Spatial-SDK-Samples) | 13 samples |
+| [Meta-Spatial-SDK-Templates](https://github.com/meta-quest/Meta-Spatial-SDK-Templates) | StarterTemplate: an immersive scene with panels that talk to each other |
+
+Worth reading first:
+
+- **HybridSample** — "begin with a standard Android-based 2D panel experience
+  and switch between an immersive experience". Literally the fork this project
+  hit: panel versus immersive, treated as a switch rather than a permanent
+  choice.
+- **MediaPlayerSample**, **PremiumMediaSample** — video on panels, including
+  streaming.
+- **UISetSample** — the Horizon OS UI Set, for controls that look native.
+
+Requirements: Quest v69+, JDK 17, Android Studio Narwhal or newer, and the Meta
+Spatial Editor.
+
+**Open question, not to be answered from memory:** whether a Spatial SDK app
+coexists with other apps or takes the headset. The template is described as an
+immersive scene containing panels, which suggests the panels are inside our app
+rather than windows in the shell. If that is so, Spatial SDK buys controllable
+curved panels — the thing the immersive client was written for — at the cost of
+the multitasking the panel client was adopted for. Verify before building on it.
+
 ### Checked and not relevant
 
 Recorded so nobody opens them again with the same question.

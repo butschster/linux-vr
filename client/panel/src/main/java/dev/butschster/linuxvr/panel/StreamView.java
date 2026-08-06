@@ -62,6 +62,8 @@ public class StreamView extends SurfaceView implements SurfaceHolder.Callback {
 
     private float lastU = -1f;
     private float lastV = -1f;
+    private volatile long framesOut = 0;
+    private volatile long unitsIn = 0;
 
     // While a button is held, small movements are swallowed until they exceed a
     // threshold. A ray held in the hand always trembles, and forwarding that
@@ -96,6 +98,14 @@ public class StreamView extends SurfaceView implements SurfaceHolder.Callback {
             Log.e(TAG, "no host configured, nothing to show");
             return;
         }
+        // A surface can be recreated without a destroy in between — a resize,
+        // the system keyboard opening. Starting a second set of threads then
+        // leaves two decoders fighting over one surface, and the picture stops.
+        if (running) {
+            Log.w(TAG, "monitor " + monitor + " surfaceCreated while already running");
+            return;
+        }
+        Log.i(TAG, "monitor " + monitor + " surface created");
         running = true;
         videoThread = new Thread(() -> runVideo(holder.getSurface()), "video");
         videoThread.start();
@@ -109,6 +119,7 @@ public class StreamView extends SurfaceView implements SurfaceHolder.Callback {
 
     @Override
     public void surfaceDestroyed(SurfaceHolder holder) {
+        Log.i(TAG, "monitor " + monitor + " surface destroyed");
         running = false;
         if (videoThread != null) {
             try {
@@ -192,6 +203,7 @@ public class StreamView extends SurfaceView implements SurfaceHolder.Callback {
                             buf.put(pending, auStart, Math.min(size, buf.capacity()));
                             codec.queueInputBuffer(index, 0, Math.min(size, buf.capacity()), ptsUs, 0);
                             ptsUs += 1000000 / 60;
+                            unitsIn++;
                         }
                         auStart = next;
                     }
@@ -218,6 +230,12 @@ public class StreamView extends SurfaceView implements SurfaceHolder.Callback {
                 int index = codec.dequeueOutputBuffer(info, 10000);
                 if (index >= 0) {
                     codec.releaseOutputBuffer(index, true);
+                    // Without a counter a stalled stream and a genuinely static
+                    // desktop look exactly the same.
+                    if (++framesOut % 120 == 0) {
+                        Log.i(TAG, "monitor " + monitor + ": " + framesOut
+                                + " frames out, " + unitsIn + " units in");
+                    }
                 }
             } catch (IllegalStateException e) {
                 return;

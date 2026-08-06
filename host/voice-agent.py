@@ -32,6 +32,11 @@ Wire protocol, one connection per utterance or per typed string:
     "text\\n" + UTF-8
         insert as is — this is the on-screen keyboard path
 
+    "key <name>\\n"
+        press one key: enter, tab, esc, backspace, up, down, left, right.
+        Dictation inserts text but cannot submit it, so without this a terminal
+        is unusable from the headset.
+
 Both end when the client half-closes. Voice and keyboard converge here on
 purpose: both produce a string, and inserting a string is the part that is
 awkward on Wayland, so it is written once.
@@ -70,6 +75,19 @@ EV_KEY, EV_SYN = 0x01, 0x00
 SYN_REPORT = 0x00
 KEY_LEFTCTRL, KEY_V = 29, 47
 
+# Keys the headset has no other way to press. Dictation inserts text but cannot
+# submit it, which makes a terminal unusable from VR.
+NAMED_KEYS = {
+    "enter": 28,
+    "tab": 15,
+    "esc": 1,
+    "backspace": 14,
+    "up": 103,
+    "down": 108,
+    "left": 105,
+    "right": 106,
+}
+
 
 def _iow(nr: int, size: int) -> int:
     return (1 << 30) | (size << 16) | (ord("U") << 8) | nr
@@ -100,7 +118,7 @@ class VirtualKeyboard:
         # These ioctls take the bit as an immediate value, not a pointer to one.
         fcntl.ioctl(self.fd, UI_SET_EVBIT, EV_KEY)
         fcntl.ioctl(self.fd, UI_SET_EVBIT, EV_SYN)
-        for key in (KEY_LEFTCTRL, KEY_V):
+        for key in {KEY_LEFTCTRL, KEY_V, *NAMED_KEYS.values()}:
             fcntl.ioctl(self.fd, UI_SET_KEYBIT, key)
 
         setup = struct.pack("HHHH80sI", 0x03, 0x1234, 0x5679, 1, name.encode()[:79], 0)
@@ -118,6 +136,13 @@ class VirtualKeyboard:
         time.sleep(0.02)
         self._emit(EV_KEY, KEY_V, 0)
         self._emit(EV_KEY, KEY_LEFTCTRL, 0)
+        self._emit(EV_SYN, SYN_REPORT, 0)
+
+    def press(self, code: int) -> None:
+        self._emit(EV_KEY, code, 1)
+        self._emit(EV_SYN, SYN_REPORT, 0)
+        time.sleep(0.02)
+        self._emit(EV_KEY, code, 0)
         self._emit(EV_SYN, SYN_REPORT, 0)
 
     def close(self) -> None:
@@ -211,6 +236,18 @@ def handle(conn: socket.socket, keyboard: VirtualKeyboard, addr: str) -> None:
         data += chunk
 
     if not data:
+        return
+
+    if data.startswith(b"key "):
+        name = data[4:].decode(errors="ignore").strip().lower()
+        code = NAMED_KEYS.get(name)
+        print(f"{addr}: key {name}" + ("" if code else " (unknown)"))
+        if code:
+            keyboard.press(code)
+        try:
+            conn.sendall(b"\n")
+        except OSError:
+            pass
         return
 
     if data.startswith(b"text\n"):

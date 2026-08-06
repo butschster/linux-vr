@@ -41,6 +41,7 @@ public class InputBar extends LinearLayout {
     private final EditText field;
     private final Button mic;
     private final Button toggle;
+    private final Button enter;
     private boolean expanded = false;
 
     private String host = "";
@@ -70,28 +71,51 @@ public class InputBar extends LinearLayout {
         });
         addView(field);
 
+        // Three independent controls. Typing and speaking are different modes
+        // of work: folding them into one would mean opening a keyboard every
+        // time you want to say a sentence.
+        toggle = new Button(context);
+        toggle.setText("\u2328");
+        toggle.setOnClickListener(v -> setExpanded(!expanded));
+        addView(toggle);
+
         mic = new Button(context);
         mic.setText("speak");
         mic.setOnClickListener(v -> toggleRecording());
         addView(mic);
 
-        // Collapsed by default. The bar is used a few times an hour and the
-        // desktop behind it all the time, so it must not sit on top of a
-        // terminal permanently.
-        toggle = new Button(context);
-        toggle.setText("\u2328");          // keyboard glyph
-        toggle.setOnClickListener(v -> setExpanded(!expanded));
-        addView(toggle);
+        // Dictation inserts text but cannot submit it. Without this a terminal
+        // is unusable from the headset: you can write a command but not run it.
+        enter = new Button(context);
+        enter.setText("\u23ce");
+        enter.setOnClickListener(v -> sendKey("enter"));
+        addView(enter);
 
         setExpanded(false);
     }
 
+    private void sendKey(String name) {
+        new Thread(() -> {
+            try (Socket socket = new Socket()) {
+                socket.connect(new InetSocketAddress(host, VOICE_PORT), 3000);
+                OutputStream out = socket.getOutputStream();
+                out.write(("key " + name + "\n").getBytes("UTF-8"));
+                out.flush();
+                socket.shutdownOutput();
+                socket.getInputStream().read();
+            } catch (IOException e) {
+                Log.w(TAG, "cannot send key: " + e.getMessage());
+            }
+        }, "send-key").start();
+    }
+
     private void setExpanded(boolean value) {
         expanded = value;
+        // Only the field hides. The buttons stay: dictation and Enter are
+        // wanted without a keyboard on screen.
         field.setVisibility(value ? VISIBLE : GONE);
-        mic.setVisibility(value ? VISIBLE : GONE);
-        toggle.setText(value ? "\u00d7" : "\u2328");
-        setBackgroundColor(value ? Color.argb(190, 20, 20, 24) : Color.TRANSPARENT);
+        setBackgroundColor(value ? Color.argb(190, 20, 20, 24)
+                                 : Color.argb(90, 20, 20, 24));
 
         // ViewGroup.LayoutParams, not LayoutParams: inside a LinearLayout
         // subclass the bare name resolves to LinearLayout.LayoutParams, but our

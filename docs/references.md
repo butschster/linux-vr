@@ -57,6 +57,20 @@ The **Spatial SDK** is the Kotlin framework for spatial panels — the middle
 ground between a plain 2D window and a fully immersive app. Relevant if the
 panel client ever needs curved surfaces or several panels it controls itself.
 
+### Checked and not relevant
+
+Recorded so nobody opens them again with the same question.
+
+| | |
+|---|---|
+| [Meta-Horizon-Platform-SDK-Samples](https://github.com/meta-quest/Meta-Horizon-Platform-SDK-Samples) | one sample, in-app purchases via Horizon Billing |
+| [horizon-platform-sdk-samples](https://github.com/meta-quest/horizon-platform-sdk-samples) | 16 samples: achievements, IAP, leaderboards, presence, users, consent |
+
+Both cover the **Platform SDK** — store and social plumbing. Nothing on panels,
+windowing, multitasking, video or input. This project is a personal tool with no
+store presence, so none of it applies. For code that does apply, use the Mobile
+OpenXR samples listed below.
+
 ## OpenXR
 
 | | |

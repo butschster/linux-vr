@@ -4,6 +4,7 @@ import android.content.Context;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
+import android.text.TextUtils;
 import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.View;
@@ -102,16 +103,23 @@ public class ContextBar extends LinearLayout {
         status.setGravity(Gravity.CENTER_VERTICAL);
         addView(status, new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT));
 
+        // The text side gets the leftover width and truncates inside it. Without the
+        // weight a deep path or a long error pushes the buttons off the window edge,
+        // where in the headset they are simply gone.
+        LinearLayout text = new LinearLayout(context);
+        text.setOrientation(HORIZONTAL);
+        text.setGravity(Gravity.CENTER_VERTICAL);
+        status.addView(text, new LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f));
+
         where = label("connecting…", TEXT, 15);
         where.setTypeface(Typeface.MONOSPACE);
-        status.addView(where);
+        where.setEllipsize(TextUtils.TruncateAt.MIDDLE);
+        where.setGravity(Gravity.CENTER_VERTICAL | Gravity.START);
+        text.addView(where, new LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f));
 
         what = label("", MUTED, 14);
         what.setPadding(dp(10), 0, dp(10), 0);
-        status.addView(what);
-
-        View spacer = new View(context);
-        status.addView(spacer, new LayoutParams(0, 1, 1f));
+        text.addView(what);
 
         status.addView(iconButton(ICON_UP, C_KEY, v -> host.onScroll(-10)));
         status.addView(iconButton(ICON_DOWN, C_KEY, v -> host.onScroll(10)));

@@ -205,10 +205,14 @@ solved; it stops existing.
 Working and verified on the host:
 
 - [x] pty agent: shell, resize, framing, 1 MB of output through the pipe
-- [x] foreground detection — verified switching between a shell, `less` and `claude`
+- [x] foreground detection — verified switching between a shell, `less` and the
+      real `claude` binary, and back again
 - [x] context switching: directory buttons at a prompt, tool keys under a tool
 - [x] project skills as buttons (10 found in this repository)
 - [x] `asr` mode in the voice agent
+- [x] the shell is clean: Claude Code's own session markers are dropped before
+      exec, so a `claude` started in the headset is not a child of the session
+      that happened to launch the agent
 - [x] client builds — 320 KB APK
 
 Not yet verified, because it needs the headset:

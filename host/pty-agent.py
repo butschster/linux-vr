@@ -445,8 +445,18 @@ class Session:
             env["LINUXVR_TERM"] = "1"
             env.pop("LINES", None)
             env.pop("COLUMNS", None)
+            # This agent is often started from inside a Claude Code session — which
+            # exports markers that make the next `claude` behave as a child of it:
+            # transcript saving off, and a warning printed at startup. The shell in
+            # the headset is not a child of anything, so those go.
+            for name in [k for k in env if k.startswith("CLAUDE_CODE_") or k == "CLAUDECODE"]:
+                env.pop(name, None)
             try:
-                os.execvpe(self.shell, [self.shell, "-l"], env)
+                # Not a login shell: on a pty bash is interactive already and reads
+                # .bashrc, which is where the prompt and the aliases live. Asking for
+                # -l instead reads the profile, and on a machine whose profile does
+                # not source .bashrc that silently costs both.
+                os.execvpe(self.shell, [self.shell], env)
             except OSError:
                 os._exit(127)
         self.pid = pid

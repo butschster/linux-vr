@@ -10,14 +10,38 @@
 
     <application
         android:allowBackup="false"
-        android:label="linux-vr panel"
+        android:label="linux-vr"
         android:theme="@android:style/Theme.Material.NoActionBar">
 
+        <!-- One launcher entry, however many monitors the host has.
+             The first instance asks the host how many screens exist and opens
+             one more window per extra screen. documentLaunchMode="always" is
+             what gives each instance its own task, and therefore its own
+             window in the shell.
+
+             A fixed set of launcher entries was tried first and is wrong twice
+             over: it shows four entries to someone with one monitor, and
+             activity aliases do not deliver their own meta-data — getActivityInfo
+             resolves an alias to its target and the per-alias value is lost. -->
         <activity
             android:name=".PanelActivity"
             android:exported="true"
-            android:configChanges="density|keyboard|keyboardHidden|navigation|orientation|screenLayout|screenSize|uiMode"
-            android:launchMode="singleTask">
+            android:documentLaunchMode="always"
+            android:resizeableActivity="true"
+            android:configChanges="density|keyboard|keyboardHidden|navigation|orientation|screenLayout|screenSize|uiMode">
+
+            <!-- Default window shape. Without it the shell opens a portrait
+                 window and a 16:9 desktop arrives stretched until the user
+                 resizes it by hand. These are the standard Android freeform
+                 hints; whether Horizon OS honours all of them is worth
+                 verifying rather than assuming. -->
+            <layout
+                android:defaultWidth="1280dp"
+                android:defaultHeight="720dp"
+                android:minWidth="480dp"
+                android:minHeight="270dp"
+                android:gravity="center" />
+
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />

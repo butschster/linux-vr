@@ -18,14 +18,19 @@ the `input` group.
 Protocol, one command per line, deliberately human-readable so it can be driven
 from a terminal while debugging:
 
-    m <x> <y>     absolute position, floats in 0..1
+    list          reply with the monitor list, then `end`
+    use <n>       this connection drives monitor n (index or connector name)
+    m <x> <y>     absolute position within that monitor, floats in 0..1
     d <button>    press    (left | right | middle)
     u <button>    release
     s <dx> <dy>   scroll, integer clicks
 
+One connection per window. Without `use`, coordinates address the whole desktop,
+which is only correct on a single-monitor setup.
+
 Usage:
     ./input-agent.py [--port 9101]
-    echo "m 0.5 0.5" | nc -q0 localhost 9101      # pointer to screen centre
+    printf 'use 1\nm 0.5 0.5\n' | nc -q0 localhost 9101
 """
 
 import argparse
@@ -36,50 +41,16 @@ import socket
 import struct
 import subprocess
 import sys
+import threading
 import time
 
 
-def desktop_layout():
-    """Logical monitor rectangles, keyed by connector, from mutter.
+# Monitor order, rectangles and ports come from monitors.py so that the
+# streamer, this agent and the headset app cannot disagree about which screen
+# is which. A disagreement there is invisible until someone clicks.
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import monitors as monitors_mod
 
-    Needed because a virtual absolute pointer addresses the whole desktop while
-    the stream shows a single monitor. Without the mapping, the left half of the
-    layer lands on the neighbouring screen — the coordinates are off by exactly
-    the ratio of one monitor to the whole desktop.
-    """
-    try:
-        out = subprocess.run(
-            ["busctl", "--user", "--json=short", "call",
-             "org.gnome.Mutter.DisplayConfig", "/org/gnome/Mutter/DisplayConfig",
-             "org.gnome.Mutter.DisplayConfig", "GetCurrentState"],
-            capture_output=True, text=True, timeout=10).stdout
-        data = json.loads(out)["data"]
-    except Exception:
-        return {}, (0, 0)
-
-    sizes = {}
-    for monitor in data[1]:
-        connector = monitor[0][0]
-        for mode in monitor[1]:
-            # mode: id, width, height, refresh, preferred_scale, ..., properties
-            props = mode[6] if len(mode) > 6 else {}
-            if isinstance(props, dict) and props.get("is-current", {}).get("data"):
-                sizes[connector] = (mode[1], mode[2])
-                break
-
-    rects = {}
-    total_w = total_h = 0
-    for lm in data[2]:
-        x, y = lm[0], lm[1]
-        for m in lm[5]:
-            connector = m[0]
-            w, h = sizes.get(connector, (0, 0))
-            if w and h:
-                rects[connector] = (x, y, w, h)
-                total_w = max(total_w, x + w)
-                total_h = max(total_h, y + h)
-
-    return rects, (total_w, total_h)
 
 # ---------------------------------------------------------------- uinput ABI
 
@@ -118,10 +89,10 @@ UI_SET_PROPBIT = _iow(110, 4)
 
 
 class VirtualPointer:
-    def __init__(self, name: str = "linux-vr pointer", region=None, desktop=None):
-        # region: (x, y, w, h) of the captured monitor inside the desktop.
-        # None means the layer covers the whole desktop.
-        self.region = region
+    def __init__(self, name: str = "linux-vr pointer", desktop=None):
+        # One virtual device serves every window. The region is not stored here
+        # but passed per move, because each connection drives a different
+        # monitor and they arrive interleaved.
         self.desktop = desktop
 
         try:
@@ -171,15 +142,15 @@ class VirtualPointer:
     def _sync(self) -> None:
         self._emit(EV_SYN, SYN_REPORT, 0)
 
-    def move(self, x: float, y: float) -> None:
+    def move(self, x: float, y: float, region=None) -> None:
         x = min(max(x, 0.0), 1.0)
         y = min(max(y, 0.0), 1.0)
 
-        # Fractions of the layer become fractions of the whole desktop, so that
-        # pointing at the middle of the streamed monitor lands in the middle of
+        # Fractions of the window become fractions of the whole desktop, so that
+        # pointing at the middle of a streamed monitor lands in the middle of
         # that monitor and not in the middle of the desktop.
-        if self.region and self.desktop and self.desktop[0] and self.desktop[1]:
-            rx, ry, rw, rh = self.region
+        if region and self.desktop and self.desktop[0] and self.desktop[1]:
+            rx, ry, rw, rh = region
             dw, dh = self.desktop
             x = (rx + x * rw) / dw
             y = (ry + y * rh) / dh
@@ -211,7 +182,24 @@ class VirtualPointer:
 
 # ---------------------------------------------------------------- server
 
-def handle(conn: socket.socket, pointer: VirtualPointer) -> None:
+def resolve(mons, token):
+    """Accept either an index or a connector name, whichever the client sends."""
+    if token.isdigit():
+        index = int(token)
+        for m in mons:
+            if m["index"] == index:
+                return m
+        return None
+    for m in mons:
+        if m["connector"].lower() == token.lower():
+            return m
+    return None
+
+
+def handle(conn: socket.socket, pointer: VirtualPointer, mons, addr) -> None:
+    # Each connection carries its own monitor. They arrive interleaved from
+    # several windows, so this cannot live on the shared pointer.
+    region = None
     buf = b""
     while True:
         chunk = conn.recv(4096)
@@ -225,8 +213,24 @@ def handle(conn: socket.socket, pointer: VirtualPointer) -> None:
                 continue
             try:
                 cmd = parts[0]
-                if cmd == "m" and len(parts) >= 3:
-                    pointer.move(float(parts[1]), float(parts[2]))
+                if cmd == "list":
+                    # The headset asks how many screens exist so it can open one
+                    # window per screen. Discovering it at runtime is the only
+                    # way to be right on every desk: a fixed set of launcher
+                    # entries is wrong for anyone with a different monitor count.
+                    reply = "".join(
+                        f"monitor {m['index']} {m['connector']} "
+                        f"{m['width']} {m['height']} {m['port']}\n" for m in mons)
+                    conn.sendall((reply + "end\n").encode())
+                elif cmd == "use" and len(parts) >= 2:
+                    m = resolve(mons, parts[1])
+                    if m is None:
+                        print(f"{addr}: unknown monitor {parts[1]}")
+                    else:
+                        region = (m["x"], m["y"], m["width"], m["height"])
+                        print(f"{addr}: drives [{m['index']}] {m['connector']}")
+                elif cmd == "m" and len(parts) >= 3:
+                    pointer.move(float(parts[1]), float(parts[2]), region)
                 elif cmd == "d" and len(parts) >= 2:
                     pointer.button(parts[1], True)
                 elif cmd == "u" and len(parts) >= 2:
@@ -242,47 +246,43 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--port", type=int, default=9101)
     ap.add_argument("--host", default="0.0.0.0")
-    ap.add_argument("--monitor", default=None,
-                    help="connector the stream captures, e.g. HDMI-2. "
-                         "Without it the layer is mapped onto the whole desktop, "
-                         "which is wrong as soon as there is more than one screen.")
     args = ap.parse_args()
 
-    rects, desktop = desktop_layout()
-    region = None
-    if rects:
-        print(f"desktop {desktop[0]}x{desktop[1]}, monitors:")
-        for connector, r in sorted(rects.items()):
-            marker = " <- streamed" if connector == args.monitor else ""
-            print(f"    {connector}: {r[2]}x{r[3]} at +{r[0]}+{r[1]}{marker}")
-        if args.monitor:
-            region = rects.get(args.monitor)
-            if region is None:
-                sys.exit(f"unknown connector {args.monitor}")
-        elif len(rects) > 1:
-            print("WARNING: several monitors and no --monitor given; the pointer "
-                  "will address the whole desktop and land on the wrong screen.")
+    mons, desktop = monitors_mod.monitors()
+    if not mons:
+        sys.exit("no monitors found")
 
-    pointer = VirtualPointer(region=region, desktop=desktop)
+    print(f"desktop {desktop[0]}x{desktop[1]}")
+    for m in mons:
+        print(f"    [{m['index']}] {m['connector']}: {m['width']}x{m['height']}"
+              f" at +{m['x']}+{m['y']}")
+
+    pointer = VirtualPointer(desktop=desktop)
     print(f"virtual pointer created, listening on {args.host}:{args.port}")
 
     srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     srv.bind((args.host, args.port))
-    srv.listen(1)
+    # One connection per window, so the backlog has to hold more than one.
+    srv.listen(8)
+
+    def serve(conn, addr):
+        conn.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+        print(f"connected: {addr}")
+        try:
+            handle(conn, pointer, mons, addr)
+        except OSError:
+            pass
+        finally:
+            conn.close()
+            print(f"disconnected: {addr}")
 
     try:
         while True:
             conn, addr = srv.accept()
-            conn.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
-            print(f"connected: {addr[0]}")
-            try:
-                handle(conn, pointer)
-            except OSError:
-                pass
-            finally:
-                conn.close()
-                print("disconnected")
+            # A thread per connection: windows send interleaved and a single
+            # blocking handler would let one window freeze the others.
+            threading.Thread(target=serve, args=(conn, addr[0]), daemon=True).start()
     except KeyboardInterrupt:
         pass
     finally:

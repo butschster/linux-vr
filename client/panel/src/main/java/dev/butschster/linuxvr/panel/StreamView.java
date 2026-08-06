@@ -30,10 +30,15 @@ import java.util.concurrent.BlockingQueue;
 public class StreamView extends SurfaceView implements SurfaceHolder.Callback {
 
     private static final String TAG = "linux-vr";
-    private static final int STREAM_PORT = 9100;
+    // Ports are spaced ten apart, matching host/monitors.py. That file is the
+    // single source of truth for monitor order; if this and it disagree, a
+    // window silently shows one screen while its clicks land on another.
+    private static final int STREAM_PORT_BASE = 9100;
+    private static final int STREAM_PORT_STEP = 10;
     private static final int INPUT_PORT = 9101;
 
     private String host = "";
+    private int monitor = 0;
     private volatile boolean running = false;
     private Thread videoThread;
     private Socket inputSocket;
@@ -54,8 +59,13 @@ public class StreamView extends SurfaceView implements SurfaceHolder.Callback {
         setFocusable(true);
     }
 
-    public void setHost(String host) {
+    public void configure(String host, int monitor) {
         this.host = host;
+        this.monitor = monitor;
+    }
+
+    private int streamPort() {
+        return STREAM_PORT_BASE + monitor * STREAM_PORT_STEP;
     }
 
     // ------------------------------------------------------------ lifecycle
@@ -94,15 +104,15 @@ public class StreamView extends SurfaceView implements SurfaceHolder.Callback {
     private void runVideo(Surface surface) {
         while (running) {
             try (Socket socket = new Socket()) {
-                socket.connect(new InetSocketAddress(host, STREAM_PORT), 3000);
+                socket.connect(new InetSocketAddress(host, streamPort()), 3000);
                 socket.setTcpNoDelay(true);
-                Log.i(TAG, "connected to " + host + ":" + STREAM_PORT);
+                Log.i(TAG, "monitor " + monitor + " connected to " + host + ":" + streamPort());
                 decodeLoop(socket.getInputStream(), surface);
             } catch (IOException e) {
                 // The host re-listens after every disconnect, so a refusal here
                 // usually means we arrived during the gap between two ffmpeg
                 // runs. Retrying beats leaving a black panel.
-                Log.w(TAG, "stream connect failed: " + e.getMessage());
+                Log.w(TAG, "monitor " + monitor + " stream connect failed: " + e.getMessage());
             }
             sleep(1000);
         }
@@ -219,7 +229,11 @@ public class StreamView extends SurfaceView implements SurfaceHolder.Callback {
                 s.setTcpNoDelay(true);
                 inputSocket = s;
                 inputOut = s.getOutputStream();
-                Log.i(TAG, "input agent connected");
+                // Tell the agent which screen this window drives, before any
+                // coordinates. Without it they would address the whole desktop.
+                inputOut.write(("use " + monitor + "\n").getBytes());
+                inputOut.flush();
+                Log.i(TAG, "input agent connected, driving monitor " + monitor);
                 pumpOutbox();
             } catch (IOException e) {
                 Log.w(TAG, "no input agent: " + e.getMessage());

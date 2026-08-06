@@ -10,13 +10,42 @@
 
 #include <android_native_app_glue.h>
 
+#include <cstdio>
 #include <string>
 
 #include "log.h"
+#include "stream_decoder.h"
 #include "video_decoder.h"
 #include "xr_app.h"
 
 namespace {
+
+// Where to get frames from is decided by a file on the device rather than a
+// rebuild: writing one line is faster than a build-install cycle when the only
+// thing changing is the host address.
+//
+//   adb shell "echo 192.168.1.10 > \
+//       /sdcard/Android/data/dev.butschster.linuxvr/files/host.txt"
+//
+// If the file is absent, the local test video is played instead.
+constexpr const char *kHostFileName = "host.txt";
+constexpr int kStreamPort = 9100;
+
+std::string readHostFile(const std::string &path) {
+    FILE *f = fopen(path.c_str(), "r");
+    if (f == nullptr) return {};
+
+    char line[128] = {0};
+    const char *ok = fgets(line, sizeof(line), f);
+    fclose(f);
+    if (ok == nullptr) return {};
+
+    std::string host(line);
+    while (!host.empty() && (host.back() == '\n' || host.back() == '\r' || host.back() == ' ')) {
+        host.pop_back();
+    }
+    return host;
+}
 
 // Layer resolution. 1440p is not "small enough to fit" but a deliberate
 // ceiling: Quest 3 offers ~1680x1760 per eye, and a 50-degree-wide monitor
@@ -33,9 +62,11 @@ constexpr const char *kTestPatternName = "desktop.mp4";
 
 struct AppState {
     XrApp xr;
-    VideoDecoder decoder;
+    VideoDecoder fileDecoder;
+    StreamDecoder streamDecoder;
+    std::string streamHost;   // empty means play the local file
     bool resumed = false;
-    bool decoderStarted = false;
+    bool sourceStarted = false;
 };
 
 void onAppCmd(android_app *app, int32_t cmd) {
@@ -59,7 +90,8 @@ void onAppCmd(android_app *app, int32_t cmd) {
             break;
         case APP_CMD_DESTROY:
             LOGI("activity being destroyed");
-            state->decoder.stop();
+            state->fileDecoder.stop();
+            state->streamDecoder.stop();
             break;
         default:
             break;
@@ -96,8 +128,15 @@ void android_main(android_app *app) {
 
     // The app's external files directory — where the test material goes.
     // Unlike shared /sdcard it needs no permission.
-    const std::string path = std::string(app->activity->externalDataPath) + "/" + kTestPatternName;
-    LOGI("looking for test file: %s", path.c_str());
+    const std::string dataDir = std::string(app->activity->externalDataPath) + "/";
+    const std::string filePath = dataDir + kTestPatternName;
+    state.streamHost = readHostFile(dataDir + kHostFileName);
+
+    if (state.streamHost.empty()) {
+        LOGI("no %s — playing local file %s", kHostFileName, filePath.c_str());
+    } else {
+        LOGI("streaming from %s:%d", state.streamHost.c_str(), kStreamPort);
+    }
 
     while (!app->destroyRequested) {
         // Drain the Android event queue.
@@ -122,25 +161,30 @@ void android_main(android_app *app) {
 
         if (!state.xr.pollEvents(app)) break;
 
-        // Start the decoder only once the session is actually running,
+        // Start the source only once the session is actually running,
         // otherwise the first frames go nowhere and the counter lies.
-        if (state.xr.sessionRunning() && !state.decoderStarted) {
-            if (state.decoder.start(path, window)) {
-                state.decoderStarted = true;
-                LOGI("decoder started");
-            } else {
-                LOGE("decoder did not start — is the file there? %s", path.c_str());
-                state.decoderStarted = true;  // do not retry every frame
-            }
+        if (state.xr.sessionRunning() && !state.sourceStarted) {
+            const bool ok = state.streamHost.empty()
+                                ? state.fileDecoder.start(filePath, window)
+                                : state.streamDecoder.start(state.streamHost, kStreamPort, window);
+            if (!ok) LOGE("frame source failed to start");
+            state.sourceStarted = true;  // do not retry every frame
         }
 
         state.xr.renderFrame();
     }
 
-    LOGI("frames delivered by decoder: %llu",
-         static_cast<unsigned long long>(state.decoder.framesRendered()));
+    if (state.streamHost.empty()) {
+        LOGI("frames delivered: %llu",
+             static_cast<unsigned long long>(state.fileDecoder.framesRendered()));
+    } else {
+        LOGI("frames delivered: %llu, received %llu KB",
+             static_cast<unsigned long long>(state.streamDecoder.framesRendered()),
+             static_cast<unsigned long long>(state.streamDecoder.bytesReceived() / 1024));
+    }
 
-    state.decoder.stop();
+    state.fileDecoder.stop();
+    state.streamDecoder.stop();
     state.xr.shutdown();
     LOGI("======== shutting down ========");
 }

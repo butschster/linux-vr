@@ -115,6 +115,7 @@ beside other apps, and the shell's pointer drives the Linux cursor.
 - [ ] Virtual display at arbitrary resolution, instead of mirroring a physical one
 - [ ] Voice control — [`docs/voice-control.md`](docs/voice-control.md)
 - [ ] Multiple independent monitor layers
+- [ ] A native terminal client — [`docs/terminal-client.md`](docs/terminal-client.md)
 - [ ] Panel aspect ratio: the window does not yet keep 16:9
 
 ## Running
@@ -188,6 +189,7 @@ Full numbers in [`docs/host-baseline.md`](docs/host-baseline.md).
 | [`latency-budget.md`](docs/latency-budget.md) | per-stage latency budget |
 | [`gotchas.md`](docs/gotchas.md) | traps: Horizon OS, Sunshine, amdgpu, build |
 | [`references.md`](docs/references.md) | where to read instead of guessing |
+| [`terminal-client.md`](docs/terminal-client.md) | rendering the terminal natively instead of streaming it |
 | [`voice-control.md`](docs/voice-control.md) | voice control design |
 
 ## License

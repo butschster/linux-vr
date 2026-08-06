@@ -67,6 +67,10 @@ public class InputBar extends LinearLayout {
     // is worse than an obvious blank.
     private static final String ICON_MIC = "\ue029";
     private static final String ICON_KEYBOARD = "\ue312";
+    // subdirectory_arrow_left, the classic down-then-left return arrow.
+    // keyboard_return was tried first and draws as an undo arrow, which reads
+    // as "back" — the opposite of what the key does.
+    private static final String ICON_ENTER = "\ue5da";
     private static final String ICON_UP = "\ue5d8";
     private static final String ICON_DOWN = "\ue5db";
     private static final String ICON_LEFT = "\ue5c4";
@@ -145,9 +149,7 @@ public class InputBar extends LinearLayout {
         //   ↑         recalls the previous command, the most used key in a shell
         addIcon(keys, ICON_MIC, COLOR_VOICE, v -> startRecording());
         addIcon(keys, ICON_KEYBOARD, COLOR_ACCENT, v -> openKeyboard());
-        // Text glyph, not the Material one: keyboard_return draws as an undo
-        // arrow and reads as "back", which is the opposite of what it does.
-        addKey(keys, "↵", COLOR_ACCENT, v -> sendKey("enter"));
+        addIcon(keys, ICON_ENTER, COLOR_ACCENT, v -> sendKey("enter"));
         // Words, not glyphs: no icon says "escape" or "control-C" without being
         // decoded, and these are the two that interrupt something.
         addKey(keys, "Esc", COLOR_WARN, v -> sendKey("esc"));

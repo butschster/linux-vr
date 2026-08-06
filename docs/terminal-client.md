@@ -88,3 +88,51 @@ only after the terminal itself works.
 Steps 1 and 2 decide whether this is worth it. If escape-sequence handling turns
 out to be a slog even with a library, the streamed desktop is already good
 enough and this stays an idea.
+
+## A control bar that follows what is running
+
+The idea this is really aimed at: a strip of keys whose contents depend on what
+is in front of you, the way a Touch Bar changed with the focused application.
+
+Different tools need different keys, and a panel that shows all of them at once
+is the panel we already built and then had to trim:
+
+| In front | Keys that matter |
+|---|---|
+| a shell | `↑` history, `^C`, `^R`, `Tab`, `^L` |
+| Claude Code | `Esc` to interrupt, `⇧Tab` for modes, `/` for commands, `!` for bash |
+| Codex or another agent | its own interrupt and mode keys |
+| `vim` | `Esc`, `:w`, `:q`, arrows |
+
+### Detection is not a guess
+
+The host owns the PTY, and a PTY has a foreground process group. So the host can
+read exactly which program is in front — `bash`, `claude`, `codex`, `vim` — from
+`/proc`, and tell the client. No heuristics, no window titles, no watching for
+prompts.
+
+That matters because a bar that guesses wrong is worse than a fixed one: keys
+that move on their own, at the moment you reach for them, are a hazard rather
+than a convenience.
+
+### Skills as keys
+
+Once the client knows the project and the tool, the project's own skills become
+buttons: one press instead of typing a slash command. This is the part that
+makes it more than a keyboard — the bar stops being a set of keys and becomes a
+list of the things worth doing right now.
+
+### Voice per context
+
+Dictation already works, and in a native terminal it gets simpler: no clipboard,
+no `Ctrl+V`, no `uinput`. The characters go straight into the PTY. The same
+context that chooses the keys can choose what dictation means — a command when a
+shell is in front, a message when an agent is.
+
+### Order
+
+1. The terminal itself, per the steps above. Nothing here works without it.
+2. Report the foreground process from the host; show it in the bar. Just a
+   label first — that proves detection before any keys depend on it.
+3. Per-tool key sets, starting with a shell and Claude Code.
+4. Skills as buttons.

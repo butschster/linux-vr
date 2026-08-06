@@ -170,6 +170,51 @@ Every encoder reports `failed` even though the hardware is fine.
 systemctl --user restart app-dev.lizardbyte.app.Sunshine.service
 ```
 
+### kmsgrab above the display refresh rate breaks timestamps
+
+Asking for a capture rate higher than the display actually produces does not
+merely duplicate frames — it destroys timestamp generation entirely.
+
+Capturing a 60 Hz output with `-framerate 90`:
+
+```
+frame=11187 fps=197 time=00:00:00.01 dup=11185 speed=0.000197x
+```
+
+Eleven thousand frames and the output clock has advanced by one hundredth of a
+second. The client receives what amounts to a single still frame.
+
+At `-framerate 60` on the same output the result is normal: `dup=13`, the clock
+advances correctly.
+
+**The capture rate must match the display, not the headset.** The mismatch with
+the headset is harmless — that is the point of a composition layer: it is
+world-locked and the compositor reprojects it at 90 Hz regardless of the stream
+rate.
+
+### CBR is the wrong rate control for a desktop
+
+With CBR 100M on a still desktop the pipeline ran at **0.49x real time** and the
+stream fell several seconds behind reality, which looks exactly like a frozen
+picture.
+
+The mechanism: a desktop is mostly static, so kmsgrab hands back the same
+framebuffer and 341 of 358 frames were duplicates. CBR pads each of them to the
+target bitrate anyway. The Wi-Fi link cannot carry 83 Mbit/s of padding, ffmpeg
+blocks writing to the socket, and everything upstream halves in speed. The TCP
+send queue sat at a steady 2.7 MB — about 220 ms of pure buffer bloat.
+
+Switching to `-rc_mode CQP -global_quality 23`:
+
+| | CBR 100M | CQP 23 |
+|---|---|---|
+| Host speed | 0.49x | 1.1x |
+| Bitrate | 83 Mbit/s | 1.9 Mbit/s |
+| Socket send queue | 2.7 MB | 0 |
+
+Under CQP an unchanged frame encodes as all-skip macroblocks — a few hundred
+bytes. A still desktop costs almost nothing and only real changes cost bitrate.
+
 ### Sunshine's unit has a different name
 
 Not `sunshine.service` but **`app-dev.lizardbyte.app.Sunshine.service`** — it

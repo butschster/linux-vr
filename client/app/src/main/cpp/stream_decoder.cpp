@@ -211,18 +211,44 @@ void StreamDecoder::receiveThread() {
             accessUnit.insert(accessUnit.end(), nal, nal + nalSize);
 
             if (isVclNal(header)) {
-                const ssize_t inIdx = AMediaCodec_dequeueInputBuffer(codec, kDequeueTimeoutUs);
+                // Wait for an input buffer rather than dropping the unit.
+                // Dropping looks like the low-latency choice but is not: losing
+                // one P-frame corrupts the picture until the next IDR, which at
+                // one keyframe per second means a second of visible garbage.
+                ssize_t inIdx = -1;
+                for (int attempt = 0; attempt < 100 && running_.load(); ++attempt) {
+                    inIdx = AMediaCodec_dequeueInputBuffer(codec, kDequeueTimeoutUs);
+                    if (inIdx >= 0) break;
+                }
+
                 if (inIdx >= 0) {
                     size_t capacity = 0;
                     uint8_t *buf = AMediaCodec_getInputBuffer(codec, inIdx, &capacity);
                     const size_t size = accessUnit.size() < capacity ? accessUnit.size() : capacity;
+                    if (accessUnit.size() > capacity) {
+                        LOGE("access unit %zu bytes does not fit buffer %zu", accessUnit.size(),
+                             capacity);
+                    }
                     std::memcpy(buf, accessUnit.data(), size);
                     AMediaCodec_queueInputBuffer(codec, inIdx, 0, size, ptsUs, 0);
                     ptsUs += frameDurationUs;
+                    unitsSubmitted_.fetch_add(1);
+                } else {
+                    unitsDropped_.fetch_add(1);
                 }
-                // Dropping the unit when no input buffer was free is deliberate:
-                // waiting would build a queue, and a queue is latency.
                 accessUnit.clear();
+
+                // Periodic stats: without them a stalled stream is
+                // indistinguishable from a genuinely static desktop.
+                const uint64_t submitted = unitsSubmitted_.load();
+                if (submitted > 0 && submitted % 120 == 0) {
+                    LOGI("stream: %llu units in, %llu frames out, %llu dropped, %llu KB, backlog %zu",
+                         static_cast<unsigned long long>(submitted),
+                         static_cast<unsigned long long>(framesRendered_.load()),
+                         static_cast<unsigned long long>(unitsDropped_.load()),
+                         static_cast<unsigned long long>(bytesReceived_.load() / 1024),
+                         pending.size());
+                }
             }
 
             cursor = next;

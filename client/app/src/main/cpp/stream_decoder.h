@@ -44,4 +44,6 @@ private:
     std::atomic<bool> connected_{false};
     std::atomic<uint64_t> framesRendered_{0};
     std::atomic<uint64_t> bytesReceived_{0};
+    std::atomic<uint64_t> unitsSubmitted_{0};
+    std::atomic<uint64_t> unitsDropped_{0};
 };

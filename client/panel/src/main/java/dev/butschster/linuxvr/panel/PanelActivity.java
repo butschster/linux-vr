@@ -83,7 +83,6 @@ public class PanelActivity extends Activity {
         }
 
         Log.i(TAG, "host reports " + indices.size() + " monitors, opening the rest");
-        openControlWindow();
         for (int i = 1; i < indices.size(); i++) {
             final int monitor = indices.get(i);
             Intent intent = new Intent(this, PanelActivity.class);
@@ -98,6 +97,11 @@ public class PanelActivity extends Activity {
             });
             sleep(700);   // give the shell time to place each window
         }
+
+        // Controls last, so the shell puts them in front. Opened first, they
+        // ended up behind the monitor windows and looked like they had not
+        // opened at all.
+        openControlWindow();
     }
 
     private void openControlWindow() {

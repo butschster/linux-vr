@@ -7,7 +7,9 @@ import android.media.AudioRecord;
 import android.media.MediaRecorder;
 import android.util.Log;
 import android.view.Gravity;
+import android.content.Context;
 import android.view.inputmethod.EditorInfo;
+import android.view.inputmethod.InputMethodManager;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.LinearLayout;
@@ -42,6 +44,7 @@ public class InputBar extends LinearLayout {
     private final Button mic;
     private final Button toggle;
     private final Button enter;
+    private final LevelMeter meter;
     private boolean expanded = false;
 
     private String host = "";
@@ -69,14 +72,28 @@ public class InputBar extends LinearLayout {
             }
             return true;
         });
+        field.setOnClickListener(v -> showKeyboard());
         addView(field);
+
+        // Takes the field's place while recording: the field is useless then,
+        // and the meter needs the width to be readable.
+        meter = new LevelMeter(context);
+        meter.setLayoutParams(new LayoutParams(0, LayoutParams.MATCH_PARENT, 1f));
+        meter.setVisibility(GONE);
+        addView(meter);
 
         // Three independent controls. Typing and speaking are different modes
         // of work: folding them into one would mean opening a keyboard every
         // time you want to say a sentence.
         toggle = new Button(context);
         toggle.setText("\u2328");
-        toggle.setOnClickListener(v -> setExpanded(!expanded));
+        toggle.setOnClickListener(v -> {
+            if (expanded) {
+                showKeyboard();     // already open: just raise the keyboard
+            } else {
+                setExpanded(true);
+            }
+        });
         addView(toggle);
 
         mic = new Button(context);
@@ -136,12 +153,30 @@ public class InputBar extends LinearLayout {
         this.host = host;
     }
 
-    /** In its own window there is nothing to hide from, so the field stays out. */
+    /**
+     * In its own window the field is always out, but the keyboard button stays.
+     * Focusing a field does not raise the system keyboard on its own, and
+     * without a visible way to ask for it the window looks like it does nothing.
+     */
     public void setAlwaysOpen(boolean value) {
         if (value) {
             setExpanded(true);
-            toggle.setVisibility(GONE);
+            toggle.setText("\u2328");
         }
+    }
+
+    /**
+     * Horizon OS raises its keyboard on an explicit request, not merely because
+     * a field has focus. Typing happens here and the text is then sent to
+     * wherever the focus is on the desktop — a terminal cannot summon this
+     * keyboard by being pointed at.
+     */
+    private void showKeyboard() {
+        field.postDelayed(() -> {
+            InputMethodManager imm =
+                    (InputMethodManager) getContext().getSystemService(Context.INPUT_METHOD_SERVICE);
+            if (imm != null) imm.showSoftInput(field, InputMethodManager.SHOW_IMPLICIT);
+        }, 100);
     }
 
     // ----------------------------------------------------------------- typing
@@ -173,6 +208,9 @@ public class InputBar extends LinearLayout {
         }
         recording = true;
         mic.setText("stop");
+        meter.reset();
+        meter.setVisibility(VISIBLE);
+        field.setVisibility(GONE);
         new Thread(this::record, "record").start();
     }
 
@@ -210,7 +248,10 @@ public class InputBar extends LinearLayout {
         recorder.startRecording();
         while (recording) {
             int n = recorder.read(buffer, 0, buffer.length);
-            if (n > 0) captured.write(buffer, 0, n);
+            if (n > 0) {
+                captured.write(buffer, 0, n);
+                meter.push(rms(buffer, n));
+            }
         }
         recorder.stop();
         recorder.release();
@@ -266,8 +307,25 @@ public class InputBar extends LinearLayout {
         post(() -> field.setHint(text));
     }
 
+    /** Root mean square of a 16-bit little-endian block, normalised to 0..1. */
+    private static float rms(byte[] pcm, int length) {
+        long sum = 0;
+        int samples = 0;
+        for (int i = 0; i + 1 < length; i += 2) {
+            short sample = (short) ((pcm[i] & 0xff) | (pcm[i + 1] << 8));
+            sum += (long) sample * sample;
+            samples++;
+        }
+        if (samples == 0) return 0f;
+        return (float) (Math.sqrt(sum / (double) samples) / 32768.0);
+    }
+
     private void stopUi() {
         recording = false;
-        post(() -> mic.setText("speak"));
+        post(() -> {
+            mic.setText("speak");
+            meter.setVisibility(GONE);
+            if (expanded) field.setVisibility(VISIBLE);
+        });
     }
 }

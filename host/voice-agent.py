@@ -36,7 +36,9 @@ Wire protocol, one connection per utterance or per typed string:
         insert as is — this is the on-screen keyboard path
 
     "key <name>\\n"
-        press one key: enter, tab, esc, backspace, delete, home, end, arrows.
+        press a key or a chord: enter, tab, esc, backspace, delete, home, end,
+        arrows, and combinations such as ctrl+c or shift+tab. Modifiers come
+        first, separated by "+".
         Dictation inserts text but cannot submit it, so without this a terminal
         is unusable from the headset.
 
@@ -92,6 +94,21 @@ NAMED_KEYS = {
     "home": 102,
     "end": 107,
     "delete": 111,
+    "space": 57,
+    "l": 38,
+    "c": 46,
+    "d": 32,
+    "r": 19,
+    "z": 44,
+}
+
+# Modifiers, for chords. Esc, Ctrl+C and Shift+Tab are the actual controls of a
+# terminal session — without them the headset can type but cannot interrupt,
+# complete or switch modes.
+MODIFIERS = {
+    "ctrl": 29,
+    "shift": 42,
+    "alt": 56,
 }
 
 
@@ -124,7 +141,7 @@ class VirtualKeyboard:
         # These ioctls take the bit as an immediate value, not a pointer to one.
         fcntl.ioctl(self.fd, UI_SET_EVBIT, EV_KEY)
         fcntl.ioctl(self.fd, UI_SET_EVBIT, EV_SYN)
-        for key in {KEY_LEFTCTRL, KEY_V, *NAMED_KEYS.values()}:
+        for key in {KEY_LEFTCTRL, KEY_V, *NAMED_KEYS.values(), *MODIFIERS.values()}:
             fcntl.ioctl(self.fd, UI_SET_KEYBIT, key)
 
         setup = struct.pack("HHHH80sI", 0x03, 0x1234, 0x5679, 1, name.encode()[:79], 0)
@@ -144,11 +161,16 @@ class VirtualKeyboard:
         self._emit(EV_KEY, KEY_LEFTCTRL, 0)
         self._emit(EV_SYN, SYN_REPORT, 0)
 
-    def press(self, code: int) -> None:
+    def press(self, code: int, modifiers=()) -> None:
+        for mod in modifiers:
+            self._emit(EV_KEY, mod, 1)
         self._emit(EV_KEY, code, 1)
         self._emit(EV_SYN, SYN_REPORT, 0)
         time.sleep(0.02)
         self._emit(EV_KEY, code, 0)
+        # Released in reverse, the way a hand would let go.
+        for mod in reversed(list(modifiers)):
+            self._emit(EV_KEY, mod, 0)
         self._emit(EV_SYN, SYN_REPORT, 0)
 
     def close(self) -> None:
@@ -245,11 +267,15 @@ def handle(conn: socket.socket, keyboard: VirtualKeyboard, addr: str) -> None:
         return
 
     if data.startswith(b"key "):
-        name = data[4:].decode(errors="ignore").strip().lower()
+        combo = data[4:].decode(errors="ignore").strip().lower()
+        # "ctrl+c", "shift+tab", "enter" — modifiers first, key last.
+        parts = combo.split("+")
+        name = parts[-1]
+        mods = [MODIFIERS[m] for m in parts[:-1] if m in MODIFIERS]
         code = NAMED_KEYS.get(name)
-        print(f"{addr}: key {name}" + ("" if code else " (unknown)"))
+        print(f"{addr}: key {combo}" + ("" if code else " (unknown)"))
         if code:
-            keyboard.press(code)
+            keyboard.press(code, mods)
         try:
             conn.sendall(b"\n")
         except OSError:

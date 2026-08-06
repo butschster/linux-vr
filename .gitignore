@@ -16,15 +16,16 @@ cmake-build-*/
 *.iml
 .vscode/
 
-# Тестовые материалы — генерируются скриптами из host/, весят сотни мегабайт
-assets/
+# Generated test material — produced by scripts in host/, hundreds of megabytes.
+# Anchored to the root so it does not swallow the app's own assets directory.
+/assets/
 *.mp4
 *.png
 
-# Внешние исходники — клонируются по инструкции из docs/gotchas.md
+# External sources — cloned per the instructions in docs/gotchas.md
 vendor/
 
-# Секреты — сюда не должно попасть ничего, но на всякий случай
+# Secrets — nothing should reach here anyway, but just in case
 .env
 *.pem
 *.key

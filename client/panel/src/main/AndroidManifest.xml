@@ -33,14 +33,17 @@
             android:resizeableActivity="true"
             android:configChanges="density|keyboard|keyboardHidden|navigation|orientation|screenLayout|screenSize|uiMode">
 
-            <!-- Default window shape. Without it the shell opens a portrait
-                 window and a 16:9 desktop arrives stretched until the user
-                 resizes it by hand. These are the standard Android freeform
-                 hints; whether Horizon OS honours all of them is worth
-                 verifying rather than assuming. -->
+            <!-- Sized to match the stream, not merely to look right.
+                 At 1280dp the shell gave a 1600x900 window for a 2560x1440
+                 stream: everything was downscaled to 0.625 before it reached
+                 the eye, turning a 15 px font into 9 px. Text lost there cannot
+                 be recovered by enlarging it afterwards.
+
+                 The shell renders roughly 1.25 px per dp here, so 2048dp lands
+                 near 2560 px and the picture arrives one pixel per pixel. -->
             <layout
-                android:defaultWidth="1280dp"
-                android:defaultHeight="720dp"
+                android:defaultWidth="2048dp"
+                android:defaultHeight="1152dp"
                 android:minWidth="480dp"
                 android:minHeight="270dp"
                 android:gravity="center" />
@@ -56,16 +59,17 @@
         <activity
             android:name=".ControlActivity"
             android:exported="false"
+            android:windowSoftInputMode="adjustResize|stateHidden"
             android:documentLaunchMode="always"
             android:resizeableActivity="true"
             android:taskAffinity="dev.butschster.linuxvr.panel.controls"
             android:label="linux-vr controls"
             android:configChanges="density|keyboard|keyboardHidden|navigation|orientation|screenLayout|screenSize|uiMode">
             <layout
-                android:defaultWidth="700dp"
-                android:defaultHeight="160dp"
+                android:defaultWidth="820dp"
+                android:defaultHeight="96dp"
                 android:minWidth="360dp"
-                android:minHeight="90dp"
+                android:minHeight="72dp"
                 android:gravity="bottom" />
         </activity>
     </application>

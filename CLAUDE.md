@@ -120,10 +120,29 @@ are easy to forget, and diverges from the base OpenXR specification. Two claims
 made from memory in this project were simply false — see
 [`docs/references.md`](docs/references.md) for which and why.
 
-Before stating how the platform behaves, consult
-[Meta's agentic tools](https://github.com/meta-quest/agentic-tools) or the
-documentation, or measure on the device. `docs/references.md` lists where to
-look for each topic.
+Before stating how the platform behaves, consult the sources below, or measure
+on the device.
+
+### Where to look, by question
+
+| Question | Go to |
+|---|---|
+| Anything about the platform, first stop | [meta-quest/agentic-tools](https://github.com/meta-quest/agentic-tools) — official CLI, MCP server and 40+ skills, including `hz-android-2d-porting` and `hz-spatial-sdk` |
+| Panel versus immersive, switching between them | [Meta-Spatial-SDK-Samples](https://github.com/meta-quest/Meta-Spatial-SDK-Samples) → **HybridSample** |
+| Video or streaming on a panel | same repo → **MediaPlayerSample**, **PremiumMediaSample** |
+| Controls that look native | same repo → **UISetSample** |
+| Minimal Spatial SDK app with panels | [Meta-Spatial-SDK-Templates](https://github.com/meta-quest/Meta-Spatial-SDK-Templates) → **StarterTemplate** |
+| Surface swapchains, passthrough, composition layers in C++ | [Mobile OpenXR samples](https://developers.meta.com/horizon/documentation/native/android/mobile-openxr-sample/) |
+| Which extensions Quest actually provides | [OpenXR support for Quest](https://developers.meta.com/horizon/documentation/native/android/mobile-openxr/) |
+| Exact semantics of an OpenXR struct field | [OpenXR reference pages](https://registry.khronos.org/OpenXR/specs/1.1/man/html/) — read, do not infer |
+| `MediaCodec`, `SurfaceView`, `MotionEvent` | [developer.android.com](https://developer.android.com/reference/android/media/MediaCodec) |
+| Store, purchases, achievements, presence | Platform SDK samples — **irrelevant to this project**, see `docs/references.md` |
+
+Full list with notes: [`docs/references.md`](docs/references.md).
+
+**Unresolved and not to be guessed:** whether a Spatial SDK app multitasks or
+takes the headset. It decides whether curved, app-controlled panels are
+available without giving up coexistence with other apps.
 
 ## Platform traps
 

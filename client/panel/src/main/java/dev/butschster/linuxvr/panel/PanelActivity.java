@@ -1,7 +1,11 @@
 package dev.butschster.linuxvr.panel;
 
+import android.Manifest;
 import android.app.Activity;
 import android.content.Intent;
+import android.content.pm.PackageManager;
+import android.view.Gravity;
+import android.widget.FrameLayout;
 import android.os.Bundle;
 import android.util.Log;
 import android.view.WindowManager;
@@ -55,7 +59,28 @@ public class PanelActivity extends Activity {
 
         StreamView view = new StreamView(this);
         view.configure(host, monitor);
-        setContentView(view);
+
+        InputBar bar = new InputBar(this);
+        bar.setHost(host);
+
+        // The bar floats over the desktop rather than shrinking it: giving up a
+        // strip of a screen whose readability was measured to the degree would
+        // be a poor trade for a control used a few times an hour.
+        FrameLayout root = new FrameLayout(this);
+        root.addView(view, new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT));
+        FrameLayout.LayoutParams barParams = new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.WRAP_CONTENT);
+        barParams.gravity = Gravity.BOTTOM;
+        root.addView(bar, barParams);
+        setContentView(root);
+
+        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO)
+                != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO}, 1);
+        }
 
         if (isFirst && !host.isEmpty() && discovered.compareAndSet(false, true)) {
             // Off the UI thread: this talks to the host.

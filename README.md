@@ -1,106 +1,109 @@
 # linux-vr
 
-VR-десктоп для Ubuntu на Quest 3 / 3S. Нативный OpenXR-клиент, который выводит
-рабочий стол **слоем компоситора**, а не панелью внутри VR-сцены.
+A VR desktop for Ubuntu on Quest 3 / 3S. A native OpenXR client that presents the
+desktop as a **compositor layer**, not as a panel inside a VR scene.
 
-Личный инструмент, не продукт под Horizon Store. Репозиторий открыт потому,
-что по дороге накопились измерения и грабли, которых не нашлось в готовом виде
-нигде — они в [`docs/`](docs/).
+This is a personal tool, not a Horizon Store product. The repository is public
+because the measurements and platform traps collected along the way weren't
+written down anywhere else — they live in [`docs/`](docs/).
 
-## Зачем свой клиент
+## Why write another client
 
-Готовые решения выводят десктоп 2D-панелью: она рендерится в eye buffer,
-проходит через foveated rendering и получает второй ресэмплинг. Для текста
-это разница между «читаемо» и «нечитаемо».
+Existing solutions show the desktop on a 2D panel: it renders into the eye
+buffer, goes through foveated rendering, and gets resampled a second time.
+For text that is the difference between readable and unreadable.
 
-Кадр должен идти в **composition layer**: слой сэмплируется компоситором
-на нативном разрешении панели после репроекции, минуя eye buffer и FFR.
-
-```
-захват KMS ──► VAAPI (H.264) ──► сеть ──► MediaCodec ──► Android Surface
-                                                              │
-                                        XR_KHR_android_surface_swapchain
-                                                              │
-                                             XrCompositionLayerCylinderKHR
-                                                              ▼
-                                                        компоситор
-```
-
-Zero-copy от декодера до компоситора: `MediaCodec` пишет прямо в поверхность
-swapchain'а, промежуточного буфера в системной памяти нет. Подтверждено на
-устройстве — декодер рапортует `color-format: 2130708361` (`COLOR_FormatSurface`).
-
-Следствие схемы: **частота стрима не обязана совпадать с частотой гарнитуры.**
-Слой прибит к мировым координатам, компоситор репроецирует его каждый кадр
-на 90 Гц независимо от того, приехал ли новый кадр десктопа.
-
-Нативно, без Unity: сцена пустая, объектов ноль, вся картинка живёт в слое.
-Движок добавил бы ~200 МБ APK и JNI-границу ровно там, где нужен zero-copy.
-Готовый APK весит **2.5 МБ**.
-
-## Главный результат: как настроить, чтобы текст читался
-
-Подробности и вывод — в [`docs/readability.md`](docs/readability.md).
-
-Читаемость определяется **угловым размером глифа**, а не плотностью пикселей:
+The frame has to go into a **composition layer**: the layer is sampled by the
+compositor at the panel's native resolution after reprojection, bypassing the
+eye buffer and FFR entirely.
 
 ```
-плотность:        R = W / θ            пикс/градус
-угловой размер:   α = h·θ / W          градусов на глиф
+KMS capture ──► VAAPI (H.264) ──► network ──► MediaCodec ──► Android Surface
+                                                                  │
+                                            XR_KHR_android_surface_swapchain
+                                                                  │
+                                                 XrCompositionLayerCylinderKHR
+                                                                  ▼
+                                                            compositor
 ```
 
-Замеренный порог комфорта на Quest 3 — **α ≈ 0.39°**, и от угла он не зависит.
-Зависит от угла то, какой кегль в него попадает.
+Zero-copy from decoder to compositor: `MediaCodec` writes straight into the
+swapchain surface, with no intermediate buffer in system memory. Confirmed on
+device — the decoder reports `color-format: 2130708361` (`COLOR_FormatSurface`).
 
-Отсюда вывод, обратный интуитивному: **не надо задирать масштаб рабочего стола,
-надо расширять слой.**
+A consequence of this design: **the stream rate does not have to match the
+headset rate.** The layer is pinned to world coordinates and the compositor
+reprojects it every frame at 90 Hz, whether or not a new desktop frame arrived.
 
-| Вариант | Угол слоя | Масштаб Ubuntu | Колонок в поле зрения |
+Native, no Unity: the scene is empty, there are zero objects, the whole picture
+lives in the layer. An engine would add ~200 MB of APK and a JNI boundary
+exactly where zero-copy is needed. The built APK is **2.5 MB**.
+
+## Main result: how to make text readable
+
+Full derivation in [`docs/readability.md`](docs/readability.md).
+
+Readability is governed by the **angular size of the glyph**, not by pixel
+density:
+
+```
+density:       R = W / θ            pixels per degree
+angular size:  α = h·θ / W          degrees per glyph
+```
+
+The measured comfort threshold on Quest 3 is **α ≈ 0.39°**, and it does not
+depend on the layer angle. What depends on the angle is which font size lands
+inside it.
+
+This leads to a conclusion opposite to the intuitive one: **don't scale the
+desktop up, widen the layer.**
+
+| Option | Layer angle | Ubuntu scaling | Columns in view |
 |---|---|---|---|
-| узкий слой, крупный шрифт | 50° | 125% | ~225 |
-| **широкий слой, штатный шрифт** | **66°** | **100%** | **~284** |
+| narrow layer, large font | 50° | 125% | ~225 |
+| **wide layer, stock font** | **66°** | **100%** | **~284** |
 
-Второй вариант даёт больше видимого текста при той же читаемости, не требует
-возни с масштабированием (а оно на Linux до сих пор ломает часть приложений)
-и тратит меньше битрейта на полезный пиксель.
+The second option shows more text at the same readability, needs no display
+scaling (which still breaks applications on Linux), and spends less bitrate per
+useful pixel.
 
-Проверено на снимке реального рабочего стола со штатными настройками
-(`Ubuntu Sans 11`, `Ubuntu Sans Mono 13`, масштаб 1.0): при 66° читается
-целиком и без напряжения.
+Verified against a screenshot of a real desktop at stock settings
+(`Ubuntu Sans 11`, `Ubuntu Sans Mono 13`, scale 1.0): at 66° the whole thing
+reads comfortably.
 
-Потолок одного слоя — **60–75°**: дальше края уходят в худшую зону линз,
-и читать их приходится поворотом головы. Больше площади — только новыми слоями,
-компоситор Quest 3 даёт их 32.
+The ceiling for a single layer is **60–75°**. Beyond that the edges fall into
+the worst part of the lenses and reading them requires turning your head, not
+moving your eyes. More area means more layers — the Quest 3 compositor allows 32.
 
-## Состояние
+## Status
 
-- [x] Хост: захват KMS + DMA-BUF, энкод VAAPI, замер 160 fps на 1440p
-- [x] Проба возможностей устройства — [`docs/device-probe.md`](docs/device-probe.md)
-- [x] Клиент: `MediaCodec` → surface swapchain → цилиндрический слой
-- [x] Замер читаемости и рабочая геометрия — [`docs/readability.md`](docs/readability.md)
-- [x] Указатель: луч контроллера → координаты на десктопе, курсор отдельным слоем
-- [ ] Живой стрим вместо файла
-- [ ] Обратный канал ввода
-- [ ] Виртуальный дисплей произвольного разрешения
-- [ ] Голосовое управление — [`docs/dictation.md`](docs/dictation.md)
-- [ ] Несколько независимых слоёв-мониторов
+- [x] Host: KMS + DMA-BUF capture, VAAPI encode, measured 160 fps at 1440p
+- [x] Runtime capability probe — [`docs/device-probe.md`](docs/device-probe.md)
+- [x] Client: `MediaCodec` → surface swapchain → cylinder layer
+- [x] Readability measurement and working geometry — [`docs/readability.md`](docs/readability.md)
+- [x] Pointer: controller ray → desktop coordinates, cursor as its own layer
+- [ ] Live stream instead of a file
+- [ ] Input back-channel
+- [ ] Virtual display at arbitrary resolution
+- [ ] Voice control — [`docs/voice-control.md`](docs/voice-control.md)
+- [ ] Multiple independent monitor layers
 
-## Сборка
+## Building
 
-Нужны JDK 21, Android SDK 34, NDK 27.2, CMake 3.22. Loader OpenXR приезжает
-с Maven Central (`org.khronos.openxr:openxr_loader_for_android`) как prefab —
-вендорский SDK от Meta скачивать не нужно.
+Requires JDK 21, Android SDK 34, NDK 27.2, CMake 3.22. The OpenXR loader comes
+from Maven Central (`org.khronos.openxr:openxr_loader_for_android`) as a prefab
+package — Meta's vendor SDK is not needed.
 
 ```sh
 cd client
-echo "sdk.dir=/путь/к/Android/Sdk" > local.properties
+echo "sdk.dir=/path/to/Android/Sdk" > local.properties
 ./gradlew assembleDebug
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 adb shell am start -n dev.butschster.linuxvr/android.app.NativeActivity
 adb logcat -s linux-vr
 ```
 
-Тестовый материал генерируется на хосте:
+Test material is generated on the host:
 
 ```sh
 ./host/make-test-pattern.sh
@@ -108,32 +111,32 @@ adb push assets/testpattern.mp4 \
     /sdcard/Android/data/dev.butschster.linuxvr/files/
 ```
 
-## Управление
+## Controls
 
 | | |
 |---|---|
-| правый стик вперёд-назад | дистанция слоя, 0.8–3 м |
-| правый стик влево-вправо | угловая ширина, 25–110° |
-| кнопка A | сброс к 1.5 м и 66° |
-| луч правого контроллера | указатель |
+| right stick, forward/back | layer distance, 0.8–3 m |
+| right stick, left/right | angular width, 25–110° |
+| A button | reset to 1.5 m and 66° |
+| right controller ray | pointer |
 
-## Железо, на котором всё измерено
+## Hardware everything was measured on
 
-Хост — мини-ПК Beelink EQ: Ryzen 7 6800U, Radeon 680M (VCN 3.0), Ubuntu 24.04,
-GNOME 46 на Wayland. Гарнитура — Quest 3, Horizon OS v206.
-Полные замеры в [`docs/host-baseline.md`](docs/host-baseline.md).
+Host — a Beelink EQ mini PC: Ryzen 7 6800U, Radeon 680M (VCN 3.0), Ubuntu 24.04,
+GNOME 46 on Wayland. Headset — Quest 3, Horizon OS v206.
+Full numbers in [`docs/host-baseline.md`](docs/host-baseline.md).
 
-## Документация
+## Documentation
 
 | | |
 |---|---|
-| [`readability.md`](docs/readability.md) | замер читаемости, вывод рабочей геометрии |
-| [`device-probe.md`](docs/device-probe.md) | что умеет рантайм Quest 3, пределы слоёв |
-| [`host-baseline.md`](docs/host-baseline.md) | железо хоста, замеры энкодера |
-| [`latency-budget.md`](docs/latency-budget.md) | бюджет задержки по этапам |
-| [`gotchas.md`](docs/gotchas.md) | грабли: Horizon OS, Sunshine, amdgpu, сборка |
-| [`dictation.md`](docs/dictation.md) | проект голосового управления |
+| [`readability.md`](docs/readability.md) | text readability measurement, working geometry |
+| [`device-probe.md`](docs/device-probe.md) | what the Quest 3 runtime offers, layer limits |
+| [`host-baseline.md`](docs/host-baseline.md) | host hardware, encoder benchmarks |
+| [`latency-budget.md`](docs/latency-budget.md) | per-stage latency budget |
+| [`gotchas.md`](docs/gotchas.md) | traps: Horizon OS, Sunshine, amdgpu, build |
+| [`voice-control.md`](docs/voice-control.md) | voice control design |
 
-## Лицензия
+## License
 
 MIT.

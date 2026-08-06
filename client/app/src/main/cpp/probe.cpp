@@ -13,26 +13,26 @@
 
 namespace {
 
-// Расширения, от наличия которых зависят архитектурные решения.
-// Строками, а не макросами: часть макросов спрятана за platform-гардами,
-// и промах в имени лучше увидеть в отчёте, чем в ошибке компиляции.
+// Extensions that architectural decisions depend on.
+// Listed as strings rather than macros: some macros sit behind platform guards,
+// and a typo is better seen in the report than in a compile error.
 struct Watched {
     const char *name;
     const char *why;
 };
 
 const Watched kWatched[] = {
-    {"XR_KHR_android_surface_swapchain", "критично: MediaCodec -> Surface -> компоситор"},
-    {"XR_KHR_composition_layer_cylinder", "критично: изогнутый слой вместо quad"},
-    {"XR_KHR_opengl_es_enable", "графический бэкенд"},
-    {"XR_KHR_android_create_instance", "создание инстанса на Android"},
-    {"XR_KHR_composition_layer_equirect2", "запасной вариант широкого лейаута"},
-    {"XR_FB_composition_layer_settings", "резкость/суперсэмплинг слоя — важно для текста"},
-    {"XR_FB_composition_layer_alpha_blend", "смешивание с passthrough"},
-    {"XR_FB_display_refresh_rate", "смена частоты дисплея на лету"},
-    {"XR_META_recommended_layer_resolution", "рантайм сам скажет оптимальное разрешение слоя"},
-    {"XR_FB_swapchain_update_state_android_surface", "смена разрешения без пересоздания"},
-    {"XR_META_performance_metrics", "телеметрия компоситора для замеров"},
+    {"XR_KHR_android_surface_swapchain", "critical: MediaCodec -> Surface -> compositor"},
+    {"XR_KHR_composition_layer_cylinder", "critical: curved layer instead of a quad"},
+    {"XR_KHR_opengl_es_enable", "graphics backend"},
+    {"XR_KHR_android_create_instance", "instance creation on Android"},
+    {"XR_KHR_composition_layer_equirect2", "fallback for very wide layouts"},
+    {"XR_FB_composition_layer_settings", "layer sharpening/supersampling — matters for text"},
+    {"XR_FB_composition_layer_alpha_blend", "blending with passthrough"},
+    {"XR_FB_display_refresh_rate", "change display rate at runtime"},
+    {"XR_META_recommended_layer_resolution", "runtime reports the optimal layer resolution"},
+    {"XR_FB_swapchain_update_state_android_surface", "resize without recreating"},
+    {"XR_META_performance_metrics", "compositor telemetry for measurements"},
 };
 
 bool isSupported(const std::vector<XrExtensionProperties> &all, const char *name,
@@ -79,13 +79,13 @@ void reportSystem(android_app *app, const std::vector<XrExtensionProperties> &al
 
     XrInstance instance = XR_NULL_HANDLE;
     if (XR_FAILED(xrCreateInstance(&ci, &instance))) {
-        LOGE("проба: xrCreateInstance провалился");
+        LOGE("probe: xrCreateInstance failed");
         return;
     }
 
     XrInstanceProperties ip{XR_TYPE_INSTANCE_PROPERTIES};
     if (XR_SUCCEEDED(xrGetInstanceProperties(instance, &ip))) {
-        LOGI("рантайм: %s  v%u.%u.%u", ip.runtimeName, XR_VERSION_MAJOR(ip.runtimeVersion),
+        LOGI("runtime: %s  v%u.%u.%u", ip.runtimeName, XR_VERSION_MAJOR(ip.runtimeVersion),
              XR_VERSION_MINOR(ip.runtimeVersion), XR_VERSION_PATCH(ip.runtimeVersion));
     }
 
@@ -93,15 +93,15 @@ void reportSystem(android_app *app, const std::vector<XrExtensionProperties> &al
     sysInfo.formFactor = XR_FORM_FACTOR_HEAD_MOUNTED_DISPLAY;
     XrSystemId systemId = XR_NULL_SYSTEM_ID;
     if (XR_FAILED(xrGetSystem(instance, &sysInfo, &systemId))) {
-        LOGE("проба: xrGetSystem провалился");
+        LOGE("probe: xrGetSystem failed");
         xrDestroyInstance(instance);
         return;
     }
 
     XrSystemProperties sp{XR_TYPE_SYSTEM_PROPERTIES};
     if (XR_SUCCEEDED(xrGetSystemProperties(instance, systemId, &sp))) {
-        LOGI("система: %s", sp.systemName);
-        LOGI("  предел swapchain: %ux%u, слоёв в композиции: %u",
+        LOGI("system: %s", sp.systemName);
+        LOGI("  swapchain limit: %ux%u, layers per composition: %u",
              sp.graphicsProperties.maxSwapchainImageWidth,
              sp.graphicsProperties.maxSwapchainImageHeight, sp.graphicsProperties.maxLayerCount);
     }
@@ -115,7 +115,7 @@ void reportSystem(android_app *app, const std::vector<XrExtensionProperties> &al
         if (XR_SUCCEEDED(xrEnumerateViewConfigurationViews(
                 instance, systemId, XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO, viewCount,
                 &viewCount, views.data()))) {
-            LOGI("  на глаз: рекомендовано %ux%u, максимум %ux%u",
+            LOGI("  per eye: recommended %ux%u, maximum %ux%u",
                  views[0].recommendedImageRectWidth, views[0].recommendedImageRectHeight,
                  views[0].maxImageRectWidth, views[0].maxImageRectHeight);
         }
@@ -127,24 +127,24 @@ void reportSystem(android_app *app, const std::vector<XrExtensionProperties> &al
 }  // namespace
 
 void runCapabilityProbe(android_app *app) {
-    LOGI("======== проба возможностей ========");
+    LOGI("======== capability probe ========");
 
     const auto extensions = enumerateExtensions();
     if (extensions.empty()) {
-        LOGE("перечислить расширения не удалось");
+        LOGE("failed to enumerate extensions");
         return;
     }
 
-    LOGI("рантайм отдаёт %zu расширений", extensions.size());
+    LOGI("runtime exposes %zu extensions", extensions.size());
     for (const auto &w : kWatched) {
         uint32_t v = 0;
         if (isSupported(extensions, w.name, &v)) {
-            LOGI("  [ЕСТЬ] %-46s v%-3u  %s", w.name, v, w.why);
+            LOGI("  [ OK ] %-46s v%-3u  %s", w.name, v, w.why);
         } else {
-            LOGE("  [ НЕТ] %-46s        %s", w.name, w.why);
+            LOGE("  [MISS] %-46s        %s", w.name, w.why);
         }
     }
 
     reportSystem(app, extensions);
-    LOGI("======== проба завершена ========");
+    LOGI("======== probe done ========");
 }

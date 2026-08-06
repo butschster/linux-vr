@@ -1,50 +1,55 @@
-# Бюджет латентности
+# Latency budget
 
-Цель motion-to-photon для десктопа мягче, чем для VR-игры: голова двигается, содержимое —
-нет, и репроекция слоя компоситором скрывает большую часть. Но **click-to-photon** для
-мыши и набора текста — жёстче, там репроекция не помогает ничем.
+The motion-to-photon target for a desktop is softer than for a VR game: the head
+moves, the content does not, and compositor reprojection of the layer hides most
+of it. But **click-to-photon** for the mouse and for typing is stricter —
+reprojection does not help there at all.
 
-Ориентир end-to-end: **40–60 мс**.
+Target end-to-end: **40–60 ms**.
 
-| Этап | Бюджет | Статус |
+| Stage | Budget | Status |
 |---|---|---|
-| Захват + композитор Ubuntu | 3–8 мс | KMS/DMA-BUF, zero-copy — в бюджете |
-| Энкод (hardware, slice-based) | 3–6 мс | замерено 160 fps @1440p, запас 1.78× |
-| Сеть (Wi-Fi 6) | 4–12 мс, хвост до 30+ | вне рассмотрения, эталон подтверждён на Windows |
-| Джиттер-буфер клиента | 5–15 мс | **главный объект тюнинга** |
-| Декод `MediaCodec` | 5–10 мс | не замерено |
-| Composition layer → фотоны | 8–14 мс при 90 Гц | определяется компоситором |
+| Capture + Ubuntu compositor | 3–8 ms | KMS/DMA-BUF, zero-copy — within budget |
+| Encode (hardware, slice-based) | 3–6 ms | measured 160 fps at 1440p, 1.78× headroom |
+| Network (Wi-Fi 6) | 4–12 ms, tail past 30 | out of scope, reference confirmed on Windows |
+| Client jitter buffer | 5–15 ms | **the main tuning target** |
+| `MediaCodec` decode | 5–10 ms | not measured |
+| Composition layer → photons | 8–14 ms at 90 Hz | set by the compositor |
 
-Все цифры, кроме энкода, требуют проверки на конкретном железе.
+Every number except the encoder still needs verification on this hardware.
 
-## Мерить p99, а не среднее
+## Measure p99, not the mean
 
-Один пропущенный кадр в секунду субъективно хуже, чем стабильные лишние 10 мс.
-Оверлей Moonlight показывает decode time, network latency и dropped frames —
-смотреть на хвост распределения и процент потерь.
+One dropped frame per second feels worse than a steady extra 10 ms. The
+Moonlight overlay reports decode time, network latency and dropped frames —
+look at the tail of the distribution and the loss percentage.
 
-## Где выигрывает свой клиент
+## Where a custom client wins
 
-Джиттер-буфер — то место, где Moonlight делает разумный дефолт, а свой клиент даёт выигрыш.
+The jitter buffer is where Moonlight makes a reasonable default and a custom
+client can do better.
 
-Moonlight сабмитит кадр «как только декодировался». Правильно — привязать сабмит к
-**предсказанному времени вывода из `xrWaitFrame`**: кадр отдаётся компоситору тогда,
-когда тот его действительно возьмёт, а не когда он готов.
+Moonlight submits a frame "as soon as it decodes". The right thing is to tie
+submission to the **predicted display time from `xrWaitFrame`**: hand the frame
+to the compositor when the compositor will actually take it, not when it happens
+to be ready.
 
-Это снимает биение между независимыми частотами стрима и гарнитуры, которое иначе
-проявляется как периодические подёргивания при ровной по цифрам латентности.
+That removes the beat between the independent stream and headset rates, which
+otherwise shows up as periodic hitching even when the numbers look flat.
 
-## Настройки энкодера, которые решают
+## Encoder settings that matter
 
-Проверять при переходе с дефолтов Sunshine на свой конфиг.
+To verify when moving from Sunshine defaults to a custom configuration.
 
-- **H.264 High, не HEVC** для первой итерации. HEVC даёт ~30% битрейта, но добавляет
-  латентность декода на `MediaCodec`. Разница может оказаться в пределах шума —
-  померить на XR2 Gen 2 обоими кодеками, прежде чем выбирать.
-- **Intra-refresh вместо периодических IDR.** Keyframe раз в N кадров — спайк битрейта,
-  который на Wi-Fi превращается в пропущенный кадр и заметный «стук» в гарнитуре.
-  Intra-refresh размазывает I-макроблоки равномерно. Поддерживается и в VAAPI, и в NVENC.
-- **CBR**, zerolatency-профиль, **B-кадры выключены**, одна reference frame.
-- **Slice-based output** — энкодер отдаёт слайсы по мере готовности, передача начинается
-  до завершения кадра. Экономит примерно один frame time в конце пайплайна.
-  На этом железе доступно: все профили идут через `VAEntrypointEncSlice`.
+- **H.264 High, not HEVC** for the first iteration. HEVC saves ~30% bitrate but
+  adds decode latency on `MediaCodec`. The difference may turn out to be within
+  noise — measure both on XR2 Gen 2 before choosing.
+- **Intra-refresh instead of periodic IDR.** A keyframe every N frames is a
+  bitrate spike, which over Wi-Fi turns into a dropped frame and a noticeable
+  hitch in the headset. Intra-refresh spreads I-macroblocks evenly. Supported by
+  both VAAPI and NVENC.
+- **CBR**, zero-latency profile, **B-frames off**, one reference frame.
+- **Slice-based output** — the encoder emits slices as they are ready and
+  transmission starts before the frame is complete. Saves roughly one frame time
+  at the end of the pipeline. Available on this hardware: every profile goes
+  through `VAEntrypointEncSlice`.

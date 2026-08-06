@@ -2,12 +2,12 @@
 
 #include <EGL/egl.h>
 
-// Минимальный EGL-контекст.
+// Minimal EGL context.
 //
-// Своей геометрии мы не рисуем — вся картинка живёт в слое компоситора.
-// Но OpenXR требует графическую привязку для создания сессии, поэтому контекст
-// нужен. Отсюда pbuffer 16x16: он никогда не используется, просто должен
-// существовать, чтобы eglMakeCurrent отработал.
+// We render no geometry of our own — the entire picture lives in a compositor
+// layer. But OpenXR requires a graphics binding to create a session, so a
+// context is needed anyway. Hence the 16x16 pbuffer: it is never used, it just
+// has to exist so that eglMakeCurrent succeeds.
 class EglContext {
 public:
     bool create();

@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
-# Тестовый материал для вехи B: оценка читаемости текста в composition layer.
+# Test material for milestone B: judging text readability in a composition layer.
 #
-# Смысл не в «работает ли декодер», а в единственном вопросе, ради которого
-# затевался свой клиент: с какого кегля текст перестаёт читаться в гарнитуре.
+# The point is not "does the decoder work" but the single question the custom
+# client exists for: at what font size does text stop being readable in the
+# headset.
 #
-# Поэтому в кадре — строки разного размера, от 10 до 32 пикселей, плюс движущийся
-# элемент: статичная картинка не покажет артефактов компрессии и репроекции.
+# Hence lines at sizes from 10 to 32 pixels, plus a moving element: a static
+# image would not reveal compression or reprojection artefacts.
 
 set -euo pipefail
 
@@ -18,13 +19,13 @@ SECONDS_LEN=30
 
 mkdir -p "$(dirname "$OUT")"
 
-[ -f "$FONT" ] || { echo "Шрифт не найден: $FONT" >&2; exit 1; }
+[ -f "$FONT" ] || { echo "Font not found: $FONT" >&2; exit 1; }
 
-# Строки разного кегля. Смесь латиницы, кириллицы и символов кода —
-# именно на них видно, где начинает разваливаться субпиксельная детализация.
+# Mixed Latin, Cyrillic and code-like punctuation — these are where subpixel
+# detail falls apart first.
 SAMPLE='The quick brown fox jumps over the lazy dog 0123456789'
 SAMPLE_RU='Съешь ещё этих мягких французских булок да выпей чаю'
-SAMPLE_CODE='if (ptr != nullptr) { return ptr->value * 2; } // комментарий'
+SAMPLE_CODE='if (ptr != nullptr) { return ptr->value * 2; } // comment'
 
 filters=""
 y=80
@@ -39,15 +40,15 @@ for size in 32 28 24 20 18 16 14 12 11 10; do
     y=$((y + 14))
 done
 
-# Движущаяся полоса: без неё не видно ни артефактов межкадрового сжатия,
-# ни рассинхрона между частотой стрима и частотой гарнитуры.
+# A sweeping bar: without it neither inter-frame compression artefacts nor a
+# mismatch between stream rate and headset rate would be visible.
 filters+="drawbox=x='mod(t*400\,${W})':y=0:w=6:h=${H}:color=cyan@0.8:t=fill,"
 
-# Счётчик кадров — чтобы на глаз ловить пропуски и повторы
+# Frame counter — to spot drops and repeats by eye
 filters+="drawtext=fontfile=${FONT}:text='%{n}':fontsize=48:fontcolor=yellow:"
 filters+="x=${W}-260:y=${H}-90"
 
-echo "Генерирую ${W}x${H}@${FPS}, ${SECONDS_LEN} с -> ${OUT}"
+echo "Generating ${W}x${H}@${FPS}, ${SECONDS_LEN}s -> ${OUT}"
 
 ffmpeg -hide_banner -loglevel error -stats -y \
     -vaapi_device /dev/dri/renderD128 \

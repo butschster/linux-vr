@@ -8,7 +8,7 @@
 #define LOGW(...) __android_log_print(ANDROID_LOG_WARN, LV_TAG, __VA_ARGS__)
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, LV_TAG, __VA_ARGS__)
 
-// Проверка результата OpenXR. Возвращает false и пишет в лог при ошибке.
+// Check an OpenXR result. Logs and returns false on failure.
 #define XR_CHECK(expr)                                                  \
     ([&]() -> bool {                                                    \
         XrResult _r = (expr);                                           \

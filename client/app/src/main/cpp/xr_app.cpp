@@ -14,27 +14,28 @@ namespace {
 
 constexpr float kPi = 3.14159265358979323846f;
 
-// Расширения, без которых приложение не имеет смысла.
-// Наличие каждого подтверждено пробой вехи A на Quest 3 (см. docs/device-probe.md).
+// Extensions without which the application has no point.
+// Each one was confirmed present by the milestone A probe on Quest 3
+// (see docs/device-probe.md).
 const char *kRequiredExtensions[] = {
     "XR_KHR_android_create_instance",
     "XR_KHR_opengl_es_enable",
     "XR_KHR_android_surface_swapchain",
     "XR_KHR_composition_layer_cylinder",
-    // MediaCodec пишет в Surface с началом координат в левом верхнем углу,
-    // swapchain OpenXR ждёт противоположного. Без этого расширения картинка
-    // приезжает перевёрнутой. Meta сделала его ровно под этот случай.
+    // MediaCodec writes into an Android Surface with the origin at the top
+    // left; an OpenXR swapchain expects the opposite. Without this extension
+    // the picture arrives flipped. Meta added it for exactly this case.
     "XR_FB_composition_layer_image_layout",
 };
 
-// Границы живой подстройки геометрии стиком
+// Bounds for live geometry tuning with the stick
 constexpr float kMinRadius = 0.8f;
 constexpr float kMaxRadius = 3.0f;
 constexpr float kMinFovDeg = 25.0f;
 constexpr float kMaxFovDeg = 110.0f;
 constexpr float kStickDeadzone = 0.25f;
 
-// Курсор: 64x64 хватает с запасом, слой всё равно занимает пару сантиметров
+// Cursor: 64x64 is plenty, the layer is a couple of centimetres across anyway
 constexpr uint32_t kCursorSize = 64;
 constexpr float kCursorMeters = 0.035f;
 
@@ -80,8 +81,8 @@ bool XrApp::createInstance(android_app *app) {
 }
 
 bool XrApp::createSession() {
-    // Требования к версии GL обязательно запросить до создания сессии,
-    // иначе рантайм имеет право отказать.
+    // The GL version requirements must be queried before creating the session,
+    // otherwise the runtime is allowed to refuse.
     PFN_xrGetOpenGLESGraphicsRequirementsKHR getRequirements = nullptr;
     if (!XR_CHECK(xrGetInstanceProcAddr(
             instance_, "xrGetOpenGLESGraphicsRequirementsKHR",
@@ -101,8 +102,8 @@ bool XrApp::createSession() {
     ci.systemId = systemId_;
     if (!XR_CHECK(xrCreateSession(instance_, &ci, &session_))) return false;
 
-    // LOCAL, а не STAGE: монитор должен стоять там, где сидит человек,
-    // и переезжать вместе с ним при перецентровке.
+    // LOCAL rather than STAGE: the monitor should stand where the person sits
+    // and move with them on recenter.
     XrReferenceSpaceCreateInfo spaceInfo{XR_TYPE_REFERENCE_SPACE_CREATE_INFO};
     spaceInfo.referenceSpaceType = XR_REFERENCE_SPACE_TYPE_LOCAL;
     spaceInfo.poseInReferenceSpace.orientation.w = 1.0f;
@@ -113,8 +114,8 @@ bool XrApp::init(android_app *app) {
     vm_ = app->activity->vm;
     if (!initLoader(app)) return false;
 
-    // Диагностика идёт сразу после loader'а: если чего-то критичного нет,
-    // это должно быть видно в логе до первой попытки что-либо создать.
+    // Diagnostics run right after the loader: if something critical is missing
+    // it should show up in the log before we try to create anything.
     runCapabilityProbe(app);
 
     if (!egl_.create()) return false;
@@ -123,17 +124,17 @@ bool XrApp::init(android_app *app) {
     if (!createActions()) return false;
     if (!createCursor()) return false;
 
-    LOGI("сессия OpenXR создана");
+    LOGI("OpenXR session created");
     return true;
 }
 
 ANativeWindow *XrApp::createVideoSurface(uint32_t width, uint32_t height) {
     if (xrCreateSwapchainAndroidSurfaceKHR_ == nullptr) return nullptr;
 
-    // Для surface swapchain заполняются только ширина и высота.
-    // Формат, sampleCount, faceCount, arraySize и mipCount обязаны быть нулями:
-    // содержимым распоряжается производитель кадров, то есть MediaCodec,
-    // а рантайм отвергает создание с ненулевыми значениями (XR_ERROR_VALIDATION_FAILURE).
+    // For a surface swapchain only width and height are filled in.
+    // format, sampleCount, faceCount, arraySize and mipCount must stay zero:
+    // the frame producer (MediaCodec) owns the contents, and the runtime
+    // rejects non-zero values with XR_ERROR_VALIDATION_FAILURE.
     XrSwapchainCreateInfo ci{XR_TYPE_SWAPCHAIN_CREATE_INFO};
     ci.width = width;
     ci.height = height;
@@ -143,24 +144,24 @@ ANativeWindow *XrApp::createVideoSurface(uint32_t width, uint32_t height) {
         return nullptr;
     }
 
-    // Surface приходит как jobject — нужен JNIEnv текущего потока.
-    // Поток android_main создан native_app_glue и к JVM не привязан,
-    // поэтому GetEnv здесь штатно возвращает JNI_EDETACHED.
+    // The Surface comes back as a jobject, so a JNIEnv for this thread is
+    // needed. The android_main thread is created by native_app_glue and is not
+    // attached to the JVM, so GetEnv here legitimately returns JNI_EDETACHED.
     JNIEnv *env = nullptr;
     if (vm_ == nullptr) {
-        LOGE("JavaVM не сохранён");
+        LOGE("JavaVM was not stored");
         return nullptr;
     }
     if (vm_->GetEnv(reinterpret_cast<void **>(&env), JNI_VERSION_1_6) != JNI_OK) {
         if (vm_->AttachCurrentThread(&env, nullptr) != JNI_OK) {
-            LOGE("AttachCurrentThread провалился");
+            LOGE("AttachCurrentThread failed");
             return nullptr;
         }
     }
 
     videoWindow_ = ANativeWindow_fromSurface(env, surface);
     if (videoWindow_ == nullptr) {
-        LOGE("ANativeWindow_fromSurface вернул null");
+        LOGE("ANativeWindow_fromSurface returned null");
         return nullptr;
     }
 
@@ -168,13 +169,13 @@ ANativeWindow *XrApp::createVideoSurface(uint32_t width, uint32_t height) {
     videoHeight_ = height;
     geometry.aspectRatio = static_cast<float>(width) / static_cast<float>(height);
 
-    LOGI("surface swapchain создан: %ux%u", width, height);
+    LOGI("surface swapchain created: %ux%u", width, height);
     return videoWindow_;
 }
 
-// Ввод с контроллера. Пока служит одной цели — подобрать геометрию слоя
-// живьём, в шлеме, вместо угадывания константами и пересборок.
-// Тот же action set станет основой push-to-talk для голосового управления.
+// Controller input. For now it serves one purpose: tuning the layer geometry
+// live, in the headset, instead of guessing at constants and rebuilding.
+// The same action set will become the basis for voice-control push-to-talk.
 bool XrApp::createActions() {
     XrActionSetCreateInfo setInfo{XR_TYPE_ACTION_SET_CREATE_INFO};
     std::strcpy(setInfo.actionSetName, "layout");
@@ -194,8 +195,8 @@ bool XrApp::createActions() {
     resetInfo.actionType = XR_ACTION_TYPE_BOOLEAN_INPUT;
     if (!XR_CHECK(xrCreateAction(actionSet_, &resetInfo, &resetAction_))) return false;
 
-    // aim, а не grip: aim — это луч указания, ориентированный так, как
-    // пользователь ожидает от «лазерной указки», а grip привязан к хвату.
+    // aim, not grip: aim is the pointing ray oriented the way a user expects
+    // from a laser pointer, while grip follows the hand's grasp.
     XrActionCreateInfo aimInfo{XR_TYPE_ACTION_CREATE_INFO};
     std::strcpy(aimInfo.actionName, "aim");
     std::strcpy(aimInfo.localizedActionName, "Pointer ray");
@@ -227,14 +228,14 @@ bool XrApp::createActions() {
     attach.actionSets = &actionSet_;
     if (!XR_CHECK(xrAttachSessionActionSets(session_, &attach))) return false;
 
-    // Пространство луча создаётся после привязки набора действий
+    // The ray space is created after the action set is attached
     XrActionSpaceCreateInfo spaceInfo{XR_TYPE_ACTION_SPACE_CREATE_INFO};
     spaceInfo.action = aimAction_;
     spaceInfo.poseInActionSpace.orientation.w = 1.0f;
     if (!XR_CHECK(xrCreateActionSpace(session_, &spaceInfo, &aimSpace_))) return false;
 
     actionsAttached_ = true;
-    LOGI("ввод подключён: стик — дистанция и ширина, A — сброс, луч — указатель");
+    LOGI("input ready: stick — distance and width, A — reset, ray — pointer");
     return true;
 }
 
@@ -260,12 +261,13 @@ bool XrApp::createCursor() {
     }
 
     glGenFramebuffers(1, &cursorFbo_);
-    LOGI("слой курсора создан: %ux%u, буферов %u", kCursorSize, kCursorSize, count);
+    LOGI("cursor layer created: %ux%u, %u buffers", kCursorSize, kCursorSize, count);
     return true;
 }
 
-// Рисуем перекрестие ножницами и очисткой — без шейдеров и без геометрии.
-// Для курсора этого достаточно, а кода на порядок меньше.
+// The crosshair is drawn with scissor rects and clears — no shaders, no
+// geometry. For a cursor that is enough, and it is an order of magnitude less
+// code.
 void XrApp::drawCursorImage() {
     uint32_t index = 0;
     XrSwapchainImageAcquireInfo acquire{XR_TYPE_SWAPCHAIN_IMAGE_ACQUIRE_INFO};
@@ -288,8 +290,8 @@ void XrApp::drawCursorImage() {
     const int arm = static_cast<int>(kCursorSize) / 2 - 4;
     const int th = 3;
 
-    // Чёрная подложка под перекрестием — иначе белый курсор теряется
-    // на светлом фоне рабочего стола
+    // Dark outline under the crosshair — without it a white cursor disappears
+    // against a light desktop
     glClearColor(0.0f, 0.0f, 0.0f, 0.85f);
     glScissor(c - arm - 1, c - th, 2 * arm + 2, 2 * th);
     glClear(GL_COLOR_BUFFER_BIT);
@@ -322,13 +324,13 @@ void XrApp::updateCursor(XrTime time) {
     const XrVector3f p = loc.pose.position;
     const XrQuaternionf q = loc.pose.orientation;
 
-    // Направление луча — вектор -Z, повёрнутый ориентацией контроллера
+    // Ray direction is the -Z axis rotated by the controller orientation
     const float dx = -2.0f * (q.x * q.z + q.w * q.y);
     const float dy = -2.0f * (q.y * q.z - q.w * q.x);
     const float dz = -(1.0f - 2.0f * (q.x * q.x + q.y * q.y));
 
-    // Пересечение с бесконечным цилиндром радиуса R вокруг оси Y.
-    // Наблюдатель внутри, поэтому нужен дальний корень.
+    // Intersection with an infinite cylinder of radius R around the Y axis.
+    // The viewer is inside, so the far root is the one we want.
     const float R = geometry.radius;
     const float a = dx * dx + dz * dz;
     if (a < 1e-6f) return;
@@ -343,27 +345,28 @@ void XrApp::updateCursor(XrTime time) {
     const float hy = p.y + t * dy;
     const float hz = p.z + t * dz;
 
-    // Угол попадания отсчитывается от -Z, куда смотрит центр слоя
+    // The hit angle is measured from -Z, where the centre of the layer faces
     const float angle = std::atan2(hx, -hz);
     const float halfAngle = geometry.horizontalFovDegrees * kPi / 180.0f * 0.5f;
     if (angle < -halfAngle || angle > halfAngle) return;
 
-    // Высота слоя в метрах выводится из длины дуги и соотношения сторон
+    // Layer height in metres follows from the arc length and the aspect ratio
     const float arc = R * (2.0f * halfAngle);
     const float heightMeters = arc / geometry.aspectRatio;
     const float dyFromCenter = hy - geometry.heightOffset;
     if (dyFromCenter < -heightMeters * 0.5f || dyFromCenter > heightMeters * 0.5f) return;
 
-    // Доли от 0 до 1 — будущие координаты мыши на десктопе
+    // 0..1 fractions — the future mouse coordinates on the desktop
     cursorU_ = 0.5f + angle / (2.0f * halfAngle);
     cursorV_ = 0.5f - dyFromCenter / heightMeters;
 
-    // Курсор чуть ближе поверхности, иначе компоситор может дать z-fighting
+    // Sit slightly in front of the surface, otherwise the compositor can
+    // produce z-fighting
     const float lift = 0.01f;
     const float scale = (R - lift) / R;
     cursorPose_.position = {hx * scale, hy, hz * scale};
 
-    // Разворачиваем плоскость курсора лицом к центру цилиндра
+    // Turn the cursor plane to face the axis of the cylinder
     const float yaw = -angle;
     cursorPose_.orientation = {0.0f, std::sin(yaw * 0.5f), 0.0f, std::cos(yaw * 0.5f)};
     cursorVisible_ = true;
@@ -386,7 +389,7 @@ void XrApp::applyInput() {
         resetState.isActive && resetState.currentState && resetState.changedSinceLastSync) {
         geometry.radius = 1.5f;
         geometry.horizontalFovDegrees = 66.0f;
-        LOGI("геометрия сброшена: дистанция %.2f м, ширина %.0f°", geometry.radius,
+        LOGI("geometry reset: distance %.2f m, width %.0f deg", geometry.radius,
              geometry.horizontalFovDegrees);
     }
 
@@ -396,7 +399,7 @@ void XrApp::applyInput() {
 
     bool changed = false;
 
-    // Вперёд-назад — дистанция
+    // Forward/back — distance
     if (stick.currentState.y > kStickDeadzone || stick.currentState.y < -kStickDeadzone) {
         geometry.radius += stick.currentState.y * 0.01f;
         if (geometry.radius < kMinRadius) geometry.radius = kMinRadius;
@@ -404,7 +407,7 @@ void XrApp::applyInput() {
         changed = true;
     }
 
-    // Влево-вправо — угловая ширина
+    // Left/right — angular width
     if (stick.currentState.x > kStickDeadzone || stick.currentState.x < -kStickDeadzone) {
         geometry.horizontalFovDegrees += stick.currentState.x * 0.3f;
         if (geometry.horizontalFovDegrees < kMinFovDeg) geometry.horizontalFovDegrees = kMinFovDeg;
@@ -412,18 +415,18 @@ void XrApp::applyInput() {
         changed = true;
     }
 
-    // Логируем не каждый кадр, иначе logcat превращается в кашу
+    // Throttled: logging every frame turns logcat into mush
     static int throttle = 0;
     if (changed && (++throttle % 30) == 0) {
         const float pxPerDegree = static_cast<float>(videoWidth_) / geometry.horizontalFovDegrees;
-        LOGI("дистанция %.2f м, ширина %.0f°, %.1f пикс/градус", geometry.radius,
+        LOGI("distance %.2f m, width %.0f deg, %.1f px/deg", geometry.radius,
              geometry.horizontalFovDegrees, pxPerDegree);
     }
 }
 
 void XrApp::handleStateChange(const XrEventDataSessionStateChanged &ev) {
     state_ = ev.state;
-    LOGI("состояние сессии -> %d", static_cast<int>(state_));
+    LOGI("session state -> %d", static_cast<int>(state_));
 
     switch (state_) {
         case XR_SESSION_STATE_READY: {
@@ -479,8 +482,8 @@ void XrApp::renderFrame() {
     XrCompositionLayerImageLayoutFB imageLayout{XR_TYPE_COMPOSITION_LAYER_IMAGE_LAYOUT_FB};
 
     if (frameState.shouldRender && videoSwapchain_ != XR_NULL_HANDLE) {
-        // Разворот по вертикали: компенсация разницы в началах координат
-        // между Android Surface и swapchain OpenXR
+        // Vertical flip: compensates for the difference in origin between an
+        // Android Surface and an OpenXR swapchain
         imageLayout.flags = XR_COMPOSITION_LAYER_IMAGE_LAYOUT_VERTICAL_FLIP_BIT_FB;
         cylinder.next = &imageLayout;
         cylinder.layerFlags = 0;
@@ -492,8 +495,8 @@ void XrApp::renderFrame() {
                                               static_cast<int32_t>(videoHeight_)};
         cylinder.subImage.imageArrayIndex = 0;
 
-        // Ось цилиндра проходит через pose и направлена по его +Y.
-        // Видимая поверхность оказывается на расстоянии radius по -Z.
+        // The cylinder axis passes through the pose along its +Y. The visible
+        // surface ends up at distance `radius` along -Z.
         cylinder.pose.orientation = {0.0f, 0.0f, 0.0f, 1.0f};
         cylinder.pose.position = {0.0f, geometry.heightOffset, 0.0f};
         cylinder.radius = geometry.radius;
@@ -503,8 +506,8 @@ void XrApp::renderFrame() {
         layers.push_back(reinterpret_cast<XrCompositionLayerBaseHeader *>(&cylinder));
     }
 
-    // Курсор — вторым слоем, поверх десктопа.
-    // Порядок в массиве и есть порядок наложения.
+    // The cursor goes second, on top of the desktop.
+    // Array order is composition order.
     XrCompositionLayerQuad cursor{XR_TYPE_COMPOSITION_LAYER_QUAD};
     if (frameState.shouldRender && cursorSwapchain_ != XR_NULL_HANDLE) {
         updateCursor(frameState.predictedDisplayTime);
@@ -524,11 +527,12 @@ void XrApp::renderFrame() {
 
             layers.push_back(reinterpret_cast<XrCompositionLayerBaseHeader *>(&cursor));
 
-            // Координаты в долях — то, что уедет на хост как позиция мыши.
-            // Пока только в лог, раз в секунду, чтобы видеть, что счёт верный.
+            // Fractional coordinates are what will travel to the host as the
+            // mouse position. Logged once a second for now, to confirm the
+            // arithmetic.
             static int tick = 0;
             if ((++tick % 90) == 0) {
-                LOGI("курсор: %.3f x %.3f  ->  пиксели %d, %d", cursorU_, cursorV_,
+                LOGI("cursor: %.3f x %.3f  ->  pixels %d, %d", cursorU_, cursorV_,
                      static_cast<int>(cursorU_ * videoWidth_),
                      static_cast<int>(cursorV_ * videoHeight_));
             }
@@ -537,8 +541,8 @@ void XrApp::renderFrame() {
 
     XrFrameEndInfo endInfo{XR_TYPE_FRAME_END_INFO};
     endInfo.displayTime = frameState.predictedDisplayTime;
-    // OPAQUE: пока рисуем на чёрном фоне. Смешивание с passthrough —
-    // отдельный шаг, через XR_FB_composition_layer_alpha_blend.
+    // OPAQUE: we draw on black for now. Blending with passthrough is a separate
+    // step, via XR_FB_composition_layer_alpha_blend.
     endInfo.environmentBlendMode = XR_ENVIRONMENT_BLEND_MODE_OPAQUE;
     endInfo.layerCount = static_cast<uint32_t>(layers.size());
     endInfo.layers = layers.data();
@@ -550,8 +554,11 @@ void XrApp::shutdown() {
         ANativeWindow_release(videoWindow_);
         videoWindow_ = nullptr;
     }
+    if (cursorSwapchain_ != XR_NULL_HANDLE) xrDestroySwapchain(cursorSwapchain_);
     if (videoSwapchain_ != XR_NULL_HANDLE) xrDestroySwapchain(videoSwapchain_);
+    if (aimSpace_ != XR_NULL_HANDLE) xrDestroySpace(aimSpace_);
     if (space_ != XR_NULL_HANDLE) xrDestroySpace(space_);
+    if (actionSet_ != XR_NULL_HANDLE) xrDestroyActionSet(actionSet_);
     if (session_ != XR_NULL_HANDLE) xrDestroySession(session_);
     if (instance_ != XR_NULL_HANDLE) xrDestroyInstance(instance_);
     egl_.destroy();

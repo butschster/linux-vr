@@ -5,18 +5,18 @@
 bool EglContext::create() {
     display_ = eglGetDisplay(EGL_DEFAULT_DISPLAY);
     if (display_ == EGL_NO_DISPLAY) {
-        LOGE("eglGetDisplay провалился");
+        LOGE("eglGetDisplay failed");
         return false;
     }
 
     EGLint major = 0, minor = 0;
     if (!eglInitialize(display_, &major, &minor)) {
-        LOGE("eglInitialize провалился");
+        LOGE("eglInitialize failed");
         return false;
     }
     LOGI("EGL %d.%d", major, minor);
 
-    // PBUFFER, а не WINDOW: на экран мы ничего не выводим напрямую
+    // PBUFFER, not WINDOW: nothing is ever presented through EGL directly
     const EGLint configAttribs[] = {
         EGL_RENDERABLE_TYPE, EGL_OPENGL_ES3_BIT,
         EGL_SURFACE_TYPE, EGL_PBUFFER_BIT,
@@ -30,26 +30,26 @@ bool EglContext::create() {
 
     EGLint numConfigs = 0;
     if (!eglChooseConfig(display_, configAttribs, &config_, 1, &numConfigs) || numConfigs == 0) {
-        LOGE("eglChooseConfig не нашёл подходящей конфигурации");
+        LOGE("eglChooseConfig found no suitable config");
         return false;
     }
 
     const EGLint pbufferAttribs[] = {EGL_WIDTH, 16, EGL_HEIGHT, 16, EGL_NONE};
     surface_ = eglCreatePbufferSurface(display_, config_, pbufferAttribs);
     if (surface_ == EGL_NO_SURFACE) {
-        LOGE("eglCreatePbufferSurface провалился");
+        LOGE("eglCreatePbufferSurface failed");
         return false;
     }
 
     const EGLint contextAttribs[] = {EGL_CONTEXT_CLIENT_VERSION, 3, EGL_NONE};
     context_ = eglCreateContext(display_, config_, EGL_NO_CONTEXT, contextAttribs);
     if (context_ == EGL_NO_CONTEXT) {
-        LOGE("eglCreateContext провалился");
+        LOGE("eglCreateContext failed");
         return false;
     }
 
     if (!eglMakeCurrent(display_, surface_, surface_, context_)) {
-        LOGE("eglMakeCurrent провалился");
+        LOGE("eglMakeCurrent failed");
         return false;
     }
 

@@ -2,7 +2,7 @@
 
 struct android_app;
 
-// Веха A: печатает в logcat, что рантайм умеет и каковы пределы слоёв.
-// Ничего не создаёт и не оставляет после себя — безопасно звать на старте.
-// Результат прогона на Quest 3 зафиксирован в docs/device-probe.md.
+// Milestone A: prints what the runtime can do and what the layer limits are.
+// Creates nothing and leaves nothing behind — safe to call at startup.
+// Results from the Quest 3 run are recorded in docs/device-probe.md.
 void runCapabilityProbe(android_app *app);

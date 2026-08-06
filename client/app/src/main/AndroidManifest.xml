@@ -1,15 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- 6DoF-трекинг обязателен: слой прибивается к мировым координатам -->
+    <!-- 6DoF tracking is required: the layer is pinned to world coordinates -->
     <uses-feature
         android:name="android.hardware.vr.headtracking"
         android:required="true"
         android:version="1" />
 
-    <!-- Без этой строки Horizon OS блокирует запуск с диалогом
-         "нужны контроллеры", если пользователь работает руками.
-         Для VR-десктопа контроллеры лежат на столе — это норма, а не исключение. -->
+    <!-- Without this line Horizon OS blocks launch with a "controllers
+         required" dialog whenever the user is working with hands. For a VR
+         desktop that is the normal case, not the exception: the controllers
+         are on the desk. -->
     <uses-feature
         android:name="oculus.software.handtracking"
         android:required="false" />
@@ -40,7 +41,7 @@
 
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
-                <!-- Категория IMMERSIVE_HMD запускает приложение сразу в VR, минуя 2D-панель -->
+                <!-- IMMERSIVE_HMD launches straight into VR, skipping the 2D panel -->
                 <category android:name="org.khronos.openxr.intent.category.IMMERSIVE_HMD" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>

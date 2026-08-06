@@ -6,24 +6,24 @@
 #include <string>
 #include <thread>
 
-// Декодер файла в ANativeWindow.
+// Decodes a file into an ANativeWindow.
 //
-// Веха B: источник кадров — локальный файл, а не сеть. Это позволяет проверить
-// весь путь MediaCodec -> surface swapchain -> цилиндрический слой,
-// не имея ещё ни транспорта, ни виртуального дисплея.
+// Milestone B: frames come from a local file rather than the network, which
+// lets the whole MediaCodec -> surface swapchain -> cylinder layer path be
+// verified without a transport or a virtual display.
 //
-// В вехе C класс заменяется на приёмник из moonlight-common-c с тем же выходом:
-// кадры уходят в тот же ANativeWindow, остальной код не меняется.
+// In milestone C this class is replaced by a live receiver with the same
+// output: frames go into the same ANativeWindow and nothing else changes.
 class VideoDecoder {
 public:
     ~VideoDecoder();
 
-    // window — окно, полученное из Surface у surface swapchain.
-    // Декодер отдаёт кадры прямо в него, копий в системную память нет.
+    // window — obtained from the Surface of a surface swapchain. The decoder
+    // writes frames straight into it; there is no copy through system memory.
     bool start(const std::string &path, ANativeWindow *window);
     void stop();
 
-    // Диагностика: сколько кадров реально доехало до компоситора
+    // Diagnostics: how many frames actually reached the compositor
     uint64_t framesRendered() const { return framesRendered_.load(); }
 
 private:

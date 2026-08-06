@@ -3,12 +3,9 @@
 #include <android/native_window.h>
 #include <jni.h>
 
-#include <string>
-#include <vector>
-
-// Порядок важен: openxr_platform.h объявляет структуры с полями EGLDisplay,
-// EGLConfig и EGLContext, но сам заголовки EGL не подтягивает.
-// Включить его раньше EGL — гарантированная стена ошибок «unknown type name».
+// Order matters: openxr_platform.h declares structures with EGLDisplay,
+// EGLConfig and EGLContext fields but does not pull in the EGL headers itself.
+// Including it first gives a guaranteed wall of "unknown type name" errors.
 #include <EGL/egl.h>
 #include <GLES3/gl3.h>
 
@@ -17,50 +14,55 @@
 #include <openxr/openxr.h>
 #include <openxr/openxr_platform.h>
 
+#include <string>
+#include <vector>
+
 #include "egl_context.h"
 
 struct android_app;
 
-// Геометрия виртуального монитора.
+// Geometry of the virtual monitor.
 //
-// Цилиндр, а не плоскость: у широкого лейаута меньше искажений по краям
-// и постоянная дистанция аккомодации — глазу не приходится перефокусироваться
-// при переводе взгляда от центра к краю.
+// A cylinder rather than a plane: a wide layout gets less distortion at the
+// edges and a constant accommodation distance, so the eye does not have to
+// refocus when looking from the centre to the side.
 struct LayerGeometry {
-    // Дистанция до поверхности, м. 1.2-1.8 — рабочий диапазон:
-    // дальше теряется угловое разрешение, ближе начинается
-    // вергентно-аккомодационный конфликт при долгой работе.
+    // Distance to the surface, metres. 1.2-1.8 is the working range: further
+    // away loses angular resolution, closer starts a vergence-accommodation
+    // conflict during long sessions.
     float radius = 1.5f;
 
-    // Угловая ширина по горизонтали, градусы. 45-60 — рабочий диапазон.
-    float horizontalFovDegrees = 50.0f;
+    // Horizontal angular width, degrees. See docs/readability.md for why 66
+    // is the default rather than 50.
+    float horizontalFovDegrees = 66.0f;
 
-    // Отношение сторон источника
+    // Aspect ratio of the source
     float aspectRatio = 16.0f / 9.0f;
 
-    // Смещение центра относительно точки отсчёта, м
+    // Vertical offset of the centre relative to the reference point, metres
     float heightOffset = 0.0f;
 };
 
-// Сессия OpenXR со слоем-монитором.
+// An OpenXR session with a monitor layer.
 //
-// Своей геометрии не рисует вообще: сцена пустая, объектов ноль.
-// Кадр приходит в surface swapchain от декодера и уходит в компоситор
-// цилиндрическим слоем, минуя eye buffer и foveated rendering.
+// Renders no geometry at all: the scene is empty, there are zero objects.
+// A frame arrives in the surface swapchain from the decoder and goes out to
+// the compositor as a cylinder layer, bypassing the eye buffer and foveated
+// rendering.
 class XrApp {
 public:
     bool init(android_app *app);
     void shutdown();
 
-    // Создаёт swapchain, за которым стоит Android Surface.
-    // Возвращённое окно передаётся декодеру — дальше кадры идут в компоситор
-    // без единой копии через системную память.
+    // Creates a swapchain backed by an Android Surface. The returned window is
+    // handed to the decoder, after which frames reach the compositor without a
+    // single copy through system memory.
     ANativeWindow *createVideoSurface(uint32_t width, uint32_t height);
 
-    // Обрабатывает события рантайма. false — пора завершаться.
+    // Processes runtime events. Returns false when it is time to quit.
     bool pollEvents(android_app *app);
 
-    // Один кадр компоситора. Вызывать в цикле.
+    // One compositor frame. Call in a loop.
     void renderFrame();
 
     bool sessionRunning() const { return sessionRunning_; }
@@ -89,8 +91,8 @@ private:
     uint32_t videoHeight_ = 0;
     ANativeWindow *videoWindow_ = nullptr;
 
-    // Ввод: пока только подстройка геометрии стиком.
-    // Тот же механизм понадобится под push-to-talk для голосового управления.
+    // Input: currently only layer geometry tuning. The same action set will
+    // carry push-to-talk for voice control.
     XrActionSet actionSet_ = XR_NULL_HANDLE;
     XrAction thumbstickAction_ = XR_NULL_HANDLE;
     XrAction resetAction_ = XR_NULL_HANDLE;
@@ -98,9 +100,9 @@ private:
     XrSpace aimSpace_ = XR_NULL_HANDLE;
     bool actionsAttached_ = false;
 
-    // Курсор живёт отдельным слоем, а не рисуется в картинку десктопа.
-    // Компоситор обновляет его на частоте гарнитуры, поэтому указатель
-    // остаётся мгновенным независимо от задержек стрима.
+    // The cursor lives in its own layer rather than being drawn into the
+    // desktop image. The compositor updates it at headset rate, so the pointer
+    // stays instant regardless of stream lag.
     XrSwapchain cursorSwapchain_ = XR_NULL_HANDLE;
     std::vector<XrSwapchainImageOpenGLESKHR> cursorImages_;
     unsigned int cursorFbo_ = 0;
@@ -112,8 +114,8 @@ private:
     bool createActions();
     bool createCursor();
     void applyInput();
-    // Пересечение луча контроллера с цилиндром. Возвращает координаты
-    // попадания в долях от 0 до 1 — это и есть позиция мыши на десктопе.
+    // Intersects the controller ray with the cylinder. Produces hit
+    // coordinates in the 0..1 range — that is the mouse position on the desktop.
     void updateCursor(XrTime time);
     void drawCursorImage();
 

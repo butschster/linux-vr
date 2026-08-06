@@ -12,7 +12,7 @@
 
 namespace {
 
-// Ждём вход/выход недолго: длинные таймауты превращаются в рывки на старте
+// Keep dequeue timeouts short: long ones turn into visible hitching at startup
 constexpr int64_t kDequeueTimeoutUs = 10000;
 
 int64_t nowUs() {
@@ -29,7 +29,7 @@ VideoDecoder::~VideoDecoder() {
 bool VideoDecoder::start(const std::string &path, ANativeWindow *window) {
     if (running_.load()) return false;
     if (window == nullptr) {
-        LOGE("декодеру не передано окно");
+        LOGE("decoder got no output window");
         return false;
     }
 
@@ -48,13 +48,13 @@ void VideoDecoder::stop() {
 void VideoDecoder::threadMain() {
     AMediaExtractor *extractor = AMediaExtractor_new();
     if (extractor == nullptr) {
-        LOGE("AMediaExtractor_new провалился");
+        LOGE("AMediaExtractor_new failed");
         return;
     }
 
     FILE *f = fopen(path_.c_str(), "rb");
     if (f == nullptr) {
-        LOGE("файл не открылся: %s", path_.c_str());
+        LOGE("cannot open file: %s", path_.c_str());
         AMediaExtractor_delete(extractor);
         return;
     }
@@ -70,7 +70,6 @@ void VideoDecoder::threadMain() {
         return;
     }
 
-    // Ищем видеодорожку
     int videoTrack = -1;
     const char *mime = nullptr;
     AMediaFormat *format = nullptr;
@@ -88,7 +87,7 @@ void VideoDecoder::threadMain() {
     }
 
     if (videoTrack < 0) {
-        LOGE("видеодорожка не найдена в %s", path_.c_str());
+        LOGE("no video track in %s", path_.c_str());
         fclose(f);
         AMediaExtractor_delete(extractor);
         return;
@@ -97,21 +96,21 @@ void VideoDecoder::threadMain() {
     int32_t width = 0, height = 0;
     AMediaFormat_getInt32(format, AMEDIAFORMAT_KEY_WIDTH, &width);
     AMediaFormat_getInt32(format, AMEDIAFORMAT_KEY_HEIGHT, &height);
-    LOGI("декодер: %s %dx%d", mime, width, height);
+    LOGI("decoder: %s %dx%d", mime, width, height);
 
     AMediaExtractor_selectTrack(extractor, videoTrack);
 
     AMediaCodec *codec = AMediaCodec_createDecoderByType(mime);
     if (codec == nullptr) {
-        LOGE("аппаратный декодер для %s не создался", mime);
+        LOGE("no hardware decoder for %s", mime);
         AMediaFormat_delete(format);
         fclose(f);
         AMediaExtractor_delete(extractor);
         return;
     }
 
-    // Ключевой момент: окно передаётся прямо в configure.
-    // Декодированный кадр попадает в swapchain компоситора, минуя системную память.
+    // The key part: the window goes straight into configure. A decoded frame
+    // lands in the compositor's swapchain without passing through system memory.
     st = AMediaCodec_configure(codec, format, window_, nullptr, 0);
     if (st != AMEDIA_OK) {
         LOGE("AMediaCodec_configure -> %d", st);
@@ -136,8 +135,8 @@ void VideoDecoder::threadMain() {
                 const ssize_t sampleSize = AMediaExtractor_readSampleData(extractor, buf, bufSize);
 
                 if (sampleSize < 0) {
-                    // Файл кончился — гоним по кругу, чтобы можно было спокойно
-                    // разглядывать текст, не перезапуская приложение
+                    // End of file — loop, so the picture can be studied without
+                    // restarting the app
                     AMediaExtractor_seekTo(extractor, 0, AMEDIAEXTRACTOR_SEEK_PREVIOUS_SYNC);
                     firstPtsUs = -1;
                     AMediaCodec_queueInputBuffer(codec, inIdx, 0, 0, 0, 0);
@@ -152,10 +151,8 @@ void VideoDecoder::threadMain() {
         AMediaCodecBufferInfo info;
         const ssize_t outIdx = AMediaCodec_dequeueOutputBuffer(codec, &info, kDequeueTimeoutUs);
         if (outIdx >= 0) {
-            // Темп воспроизведения по presentation time.
-            // В вехе C это заменится привязкой к предсказанному времени вывода
-            // из xrWaitFrame — там смысл именно в том, чтобы сабмитить кадр
-            // тогда, когда компоситор его возьмёт, а не когда он готов.
+            // Playback paced by presentation time. A live stream does the
+            // opposite — see StreamDecoder, where latency beats smoothness.
             if (firstPtsUs < 0) {
                 firstPtsUs = info.presentationTimeUs;
                 startWallUs = nowUs();
@@ -166,12 +163,13 @@ void VideoDecoder::threadMain() {
                 std::this_thread::sleep_for(std::chrono::microseconds(deltaUs));
             }
 
-            // true — отдать кадр в окно. Это и есть вывод в компоситор.
+            // true — hand the frame to the window. This is the output to the
+            // compositor.
             AMediaCodec_releaseOutputBuffer(codec, outIdx, true);
             framesRendered_.fetch_add(1);
         } else if (outIdx == AMEDIACODEC_INFO_OUTPUT_FORMAT_CHANGED) {
             AMediaFormat *newFmt = AMediaCodec_getOutputFormat(codec);
-            LOGI("формат вывода сменился: %s", AMediaFormat_toString(newFmt));
+            LOGI("output format changed: %s", AMediaFormat_toString(newFmt));
             AMediaFormat_delete(newFmt);
         }
     }
@@ -181,6 +179,6 @@ void VideoDecoder::threadMain() {
     AMediaFormat_delete(format);
     AMediaExtractor_delete(extractor);
     fclose(f);
-    LOGI("декодер остановлен, кадров отдано: %llu",
+    LOGI("decoder stopped, frames delivered: %llu",
          static_cast<unsigned long long>(framesRendered_.load()));
 }

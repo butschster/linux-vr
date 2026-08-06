@@ -1,71 +1,79 @@
 # CLAUDE.md
 
-Указания для Claude Code при работе в этом репозитории.
+Guidance for Claude Code when working in this repository.
 
-## О проекте
+## Language
 
-VR-десктоп для Ubuntu на Quest 3 / 3S. Личный инструмент, **не продукт под
-Horizon Store** — VRC, entitlement check, обработка guardian exit и прочая
-магазинная обвязка не нужны и в объём не входят.
+**Everything committed to this repository is written in English** — docs, code
+comments, log strings, commit messages. The repository is public and mixed
+language makes it useless to an outside reader.
 
-Язык общения и документации — русский. Комментарии в коде тоже.
+Conversation with the repository owner happens in Russian. That does not change
+what goes into the files.
 
-## Что здесь своё, а что переиспользуется
+## What this project is
 
-Своё пишется **только там, где готовые решения архитектурно проигрывают** —
-это клиент в гарнитуре. Всё остальное берётся готовым.
+A VR desktop for Ubuntu on Quest 3 / 3S. A personal tool, **not a Horizon Store
+product** — VRC compliance, entitlement checks, guardian-exit handling and the
+rest of the store scaffolding are out of scope.
 
-| Слой | Решение |
+## What is written here and what is reused
+
+Custom code is written **only where off-the-shelf solutions lose
+architecturally** — that means the in-headset client. Everything else is reused.
+
+| Layer | Choice |
 |---|---|
-| Захват + энкод на хосте | KMS + DMA-BUF → VAAPI |
-| Транспорт | сейчас прямая труба по TCP; в финале — Sunshine + `moonlight-common-c` |
-| **Клиент в гарнитуре** | **свой, нативный OpenXR** |
+| Host capture + encode | KMS + DMA-BUF → VAAPI |
+| Transport | currently a direct TCP pipe; eventually Sunshine + `moonlight-common-c` |
+| **In-headset client** | **custom, native OpenXR** |
 
-Если возникает соблазн написать своё в первых двух строках — это почти всегда
-неверный ход. Исключение: несколько независимых поверхностей-мониторов,
-которых Sunshine не даёт.
+If you feel tempted to write something custom for the first two rows, that is
+almost always the wrong move. The one exception is multiple independent monitor
+surfaces, which Sunshine does not provide.
 
-## Устройство репозитория
+## Layout
 
 ```
-client/     нативное OpenXR-приложение (Gradle + CMake + NDK, без Unity)
-host/       скрипты для Ubuntu: генерация тестового материала, захват
-docs/       измерения, решения, грабли — читать до того, как что-то менять
-vendor/     внешние исходники, в git не входят (см. docs/gotchas.md)
-assets/     генерируемые тестовые видео, в git не входят
+client/     native OpenXR app (Gradle + CMake + NDK, no Unity)
+host/       Ubuntu-side scripts: test material generation, capture, streaming
+docs/       measurements, decisions, traps — read before changing anything
+vendor/     external sources, not in git (see docs/gotchas.md)
+assets/     generated test videos, not in git
 ```
 
-### Ключевые файлы клиента
+### Key client files
 
 | | |
 |---|---|
-| `xr_app.cpp` | сессия, слои, ввод, курсор — ядро |
-| `video_decoder.cpp` | `MediaCodec` из файла в `ANativeWindow` |
-| `probe.cpp` | диагностика возможностей рантайма, зовётся при старте |
-| `egl_context.cpp` | pbuffer-контекст, нужен только для привязки OpenXR |
+| `xr_app.cpp` | session, layers, input, cursor — the core |
+| `video_decoder.cpp` | `MediaCodec` from a file into an `ANativeWindow` |
+| `stream_decoder.cpp` | same, but from a live TCP H.264 stream |
+| `probe.cpp` | runtime capability diagnostics, runs at startup |
+| `egl_context.cpp` | pbuffer context, exists only to bind OpenXR |
 
-## Принципы, которые не надо ломать
+## Principles that must not be broken
 
-**Кадр идёт в composition layer, а не на quad в сцене.** Это причина
-существования проекта. Слой сэмплируется компоситором на нативном разрешении
-панели, минуя eye buffer и foveated rendering. Любое предложение «отрисовать
-в текстуру и показать в сцене» — регресс.
+**Frames go into a composition layer, never onto a quad in the scene.** This is
+the reason the project exists. The layer is sampled by the compositor at the
+panel's native resolution, bypassing the eye buffer and foveated rendering. Any
+proposal to "render into a texture and show it in the scene" is a regression.
 
-**Zero-copy от декодера до компоситора.** `MediaCodec` пишет прямо в поверхность
-из `xrCreateSwapchainAndroidSurfaceKHR`. Копия кадра 1440p через CPU — это
-2–4 мс, которых нет в бюджете.
+**Zero-copy from decoder to compositor.** `MediaCodec` writes directly into the
+surface obtained from `xrCreateSwapchainAndroidSurfaceKHR`. Copying a 1440p
+frame through the CPU costs 2–4 ms, which the budget does not have.
 
-**Курсор — отдельный слой.** Не рисуется в картинку десктопа. Обновляется на
-частоте гарнитуры и потому остаётся мгновенным при любых задержках стрима.
+**The cursor is its own layer.** It is not drawn into the desktop image. It
+updates at headset rate and therefore stays instant regardless of stream lag.
 
-**Сцена пустая.** Своей геометрии не рисуем вообще. EGL-контекст существует
-только потому, что его требует создание сессии OpenXR.
+**The scene is empty.** No custom geometry is rendered at all. The EGL context
+exists solely because creating an OpenXR session requires one.
 
-**Мерить, а не предполагать.** Все числа в `docs/` получены на этом железе.
-Если добавляется новое утверждение о производительности или читаемости —
-оно должно опираться на замер, а не на спецификацию вендора.
+**Measure, don't assume.** Every number in `docs/` was obtained on this
+hardware. A new claim about performance or readability must rest on a
+measurement, not on a vendor spec sheet.
 
-## Сборка и запуск
+## Build and run
 
 ```sh
 cd client
@@ -75,65 +83,66 @@ adb shell am start -n dev.butschster.linuxvr/android.app.NativeActivity
 adb logcat -s linux-vr
 ```
 
-`local.properties` с `sdk.dir` не в git — создать локально.
+`local.properties` with `sdk.dir` is not in git — create it locally.
 
-### Приёмы отладки, сэкономившие время
+### Debugging techniques that saved time
 
-**Логи вытесняются из кольцевого буфера.** Компоситор Horizon OS умеет залить
-logcat предупреждениями за секунды. Читать надо живым захватом по тегу,
-запущенным **до** старта приложения, а не через `logcat -d` после:
+**Log lines get evicted from the ring buffer.** The Horizon OS compositor can
+flood logcat with warnings in seconds. Capture live by tag, started **before**
+launching the app, rather than reading `logcat -d` afterwards:
 
 ```sh
 adb logcat -c && adb logcat -s linux-vr > log.txt &
 adb shell am start -n dev.butschster.linuxvr/android.app.NativeActivity
 ```
 
-**Успешный `am start` ничего не значит.** Проверять фактом:
+**A successful `am start` means nothing.** Verify by fact:
 
 ```sh
-adb shell pidof dev.butschster.linuxvr && echo ЖИВ || echo УМЕР
+adb shell pidof dev.butschster.linuxvr && echo ALIVE || echo DEAD
 ```
 
-**Гарнитура засыпает, когда её сняли.** `mWakefulness=Asleep`, активность
-уходит в паузу, сессия не поднимается. Это не баг — проверять перед тем,
-как искать причину в коде:
+**The headset sleeps when taken off.** `mWakefulness=Asleep`, the activity
+pauses, the session never starts. That is not a bug — check it before looking
+for the cause in code:
 
 ```sh
 adb shell dumpsys power | grep mWakefulness=
 ```
 
-**Gradle кеширует обнаружение тулчейнов.** После установки JDK нужен
-`./gradlew --stop`, иначе ошибка повторяется на исправленной системе.
+**Gradle caches toolchain detection.** After installing a JDK you need
+`./gradlew --stop`, otherwise the same error repeats on a fixed system.
 
-## Грабли платформы
+## Platform traps
 
-Полный список — [`docs/gotchas.md`](docs/gotchas.md), пополнять по мере находок.
-Самое важное:
+The full list is [`docs/gotchas.md`](docs/gotchas.md); add to it as you find
+more. The most important ones:
 
-**Horizon OS рапортует API 34, но набор системных сервисов урезан.** Проверять
-доступность сервиса фактом, а не через `Build.VERSION`. На этом падал Moonlight
-всех версий (`GameManager` возвращает `null`).
+**Horizon OS reports API 34 but ships a reduced set of system services.** Check
+service availability by fact, not via `Build.VERSION`. Every version of
+Moonlight crashes on this (`GameManager` returns `null`).
 
-**Без объявления `oculus.software.handtracking` система блокирует запуск**
-с диалогом «нужны контроллеры». Хендтрекинг использовать не обязательно,
-важен сам факт объявления в манифесте.
+**Without declaring `oculus.software.handtracking` the system blocks launch**
+with a "controllers required" dialog. You do not have to use hand tracking —
+the declaration itself is what matters.
 
-**`xrCreateSwapchainAndroidSurfaceKHR` требует нулей** в `format`, `sampleCount`,
-`faceCount`, `arraySize`, `mipCount`. Заполнять только `width` и `height`.
+**`xrCreateSwapchainAndroidSurfaceKHR` requires zeros** in `format`,
+`sampleCount`, `faceCount`, `arraySize`, `mipCount`. Fill in only `width` and
+`height`.
 
-**Заголовки EGL включать до `openxr_platform.h`** — иначе стена ошибок
+**Include EGL headers before `openxr_platform.h`**, otherwise you get a wall of
 `unknown type name 'EGLDisplay'`.
 
-**Vulkan Video encode на RADV вешает GPU.** Sunshine выбирает его по умолчанию;
-на Rembrandt это приводит к сбросу amdgpu и выбросу из графической сессии.
-Принудительно `encoder = vaapi`.
+**Vulkan Video encode on RADV hangs the GPU.** Sunshine picks it by default; on
+Rembrandt this causes an amdgpu reset and throws you out of the graphical
+session. Force `encoder = vaapi`.
 
-## Стиль
+## Style
 
-- Комментарий объясняет **почему**, а не что. «Zero-copy, иначе 2–4 мс на копию»
-  полезен; «создаём swapchain» — нет.
-- Числа в комментариях и документации сопровождаются источником: замер, вывод
-  из замера или спецификация.
-- Не добавлять зависимость, если задача решается тем, что уже есть.
-  Курсор нарисован ножницами и `glClear` именно поэтому — шейдеры и геометрия
-  ради перекрестия не нужны.
+- A comment explains **why**, not what. "Zero-copy, otherwise 2–4 ms per copy"
+  is useful; "create the swapchain" is not.
+- Numbers in comments and docs carry their source: a measurement, a conclusion
+  drawn from one, or a specification.
+- Do not add a dependency when what is already there will do. The cursor is
+  drawn with scissor rects and `glClear` for exactly this reason — shaders and
+  geometry are not worth it for a crosshair.

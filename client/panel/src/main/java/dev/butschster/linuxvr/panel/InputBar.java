@@ -13,6 +13,7 @@ import android.view.inputmethod.InputMethodManager;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.LinearLayout;
+import android.widget.TextView;
 
 import java.io.BufferedReader;
 import java.io.ByteArrayOutputStream;
@@ -21,6 +22,7 @@ import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.net.Socket;
+import java.util.Locale;
 
 /**
  * Typing and dictation, both ending up as text at the Linux cursor.
@@ -40,11 +42,18 @@ public class InputBar extends LinearLayout {
 
     private static final int SAMPLE_RATE = 16000;   // what Whisper wants anyway
 
+    // Five minutes is both a guard against a forgotten recording and a quality
+    // limit: a long clip costs more to transcribe and Whisper splits it into
+    // windows anyway, which is where context between sentences gets lost.
+    private static final long MAX_RECORDING_MS = 5 * 60 * 1000;
+
     private final EditText field;
     private final Button mic;
     private final Button toggle;
     private final Button enter;
     private final LevelMeter meter;
+    private final TextView timer;
+    private volatile long recordingStartedAt = 0;
     private boolean expanded = false;
 
     private String host = "";
@@ -82,6 +91,12 @@ public class InputBar extends LinearLayout {
         meter.setVisibility(GONE);
         addView(meter);
 
+        timer = new TextView(context);
+        timer.setTextColor(Color.rgb(200, 200, 210));
+        timer.setPadding(12, 0, 12, 0);
+        timer.setVisibility(GONE);
+        addView(timer);
+
         // Three independent controls. Typing and speaking are different modes
         // of work: folding them into one would mean opening a keyboard every
         // time you want to say a sentence.
@@ -103,12 +118,30 @@ public class InputBar extends LinearLayout {
 
         // Dictation inserts text but cannot submit it. Without this a terminal
         // is unusable from the headset: you can write a command but not run it.
+        // Editing keys. Text already on the desktop cannot be pulled into this
+        // field — Wayland gives no way to read another window's contents — so
+        // the only way to change it is to edit it in place, watching the result
+        // in the stream. Without these there was nothing to edit it with.
+        addKey("\u2190", "left");
+        addKey("\u2192", "right");
+        addKey("\u232b", "backspace");
+        addKey("\u21e4", "home");
+        addKey("\u21e5", "end");
+
         enter = new Button(context);
         enter.setText("\u23ce");
         enter.setOnClickListener(v -> sendKey("enter"));
         addView(enter);
 
         setExpanded(false);
+    }
+
+    private void addKey(String label, String key) {
+        Button b = new Button(getContext());
+        b.setText(label);
+        b.setPadding(8, 0, 8, 0);
+        b.setOnClickListener(v -> sendKey(key));
+        addView(b);
     }
 
     private void sendKey(String name) {
@@ -210,7 +243,11 @@ public class InputBar extends LinearLayout {
         mic.setText("stop");
         meter.reset();
         meter.setVisibility(VISIBLE);
+        timer.setVisibility(VISIBLE);
+        timer.setText("0:00");
         field.setVisibility(GONE);
+        recordingStartedAt = System.currentTimeMillis();
+        tick();
         new Thread(this::record, "record").start();
     }
 
@@ -251,6 +288,10 @@ public class InputBar extends LinearLayout {
             if (n > 0) {
                 captured.write(buffer, 0, n);
                 meter.push(rms(buffer, n));
+            }
+            if (System.currentTimeMillis() - recordingStartedAt > MAX_RECORDING_MS) {
+                Log.i(TAG, "recording hit the five minute limit, stopping");
+                recording = false;
             }
         }
         recorder.stop();
@@ -307,6 +348,15 @@ public class InputBar extends LinearLayout {
         post(() -> field.setHint(text));
     }
 
+    /** Updates the elapsed time while recording, once a second. */
+    private void tick() {
+        if (!recording) return;
+        long elapsed = System.currentTimeMillis() - recordingStartedAt;
+        timer.setText(String.format(Locale.US, "%d:%02d",
+                elapsed / 60000, (elapsed / 1000) % 60));
+        postDelayed(this::tick, 500);
+    }
+
     /** Root mean square of a 16-bit little-endian block, normalised to 0..1. */
     private static float rms(byte[] pcm, int length) {
         long sum = 0;
@@ -325,6 +375,7 @@ public class InputBar extends LinearLayout {
         post(() -> {
             mic.setText("speak");
             meter.setVisibility(GONE);
+            timer.setVisibility(GONE);
             if (expanded) field.setVisibility(VISIBLE);
         });
     }

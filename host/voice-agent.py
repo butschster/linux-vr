@@ -36,7 +36,7 @@ Wire protocol, one connection per utterance or per typed string:
         insert as is — this is the on-screen keyboard path
 
     "key <name>\\n"
-        press one key: enter, tab, esc, backspace, up, down, left, right.
+        press one key: enter, tab, esc, backspace, delete, home, end, arrows.
         Dictation inserts text but cannot submit it, so without this a terminal
         is unusable from the headset.
 
@@ -89,6 +89,9 @@ NAMED_KEYS = {
     "down": 108,
     "left": 105,
     "right": 106,
+    "home": 102,
+    "end": 107,
+    "delete": 111,
 }
 
 

@@ -61,7 +61,7 @@ public class LevelMeter extends View {
             // A quiet room sits near zero and speech barely lifts it, so the
             // scale is compressed — this is a presence indicator, not a meter.
             float shown = (float) Math.sqrt(level);
-            float half = Math.max(1.5f, shown * (h * 0.45f));
+            float half = Math.max(1.5f, shown * (h * 0.30f));
 
             paint.setColor(shown > 0.06f ? Color.rgb(120, 220, 140)
                                          : Color.argb(120, 160, 160, 170));

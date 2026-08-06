@@ -16,8 +16,9 @@ import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.nio.ByteBuffer;
 import java.util.Locale;
-import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * Shows the streamed desktop and forwards pointer input back to the host.
@@ -45,13 +46,32 @@ public class StreamView extends SurfaceView implements SurfaceHolder.Callback {
     private OutputStream inputOut;
 
     // Input events arrive on the UI thread, and Android forbids socket writes
-    // there. A bounded queue drained by a sender thread keeps the pointer off
-    // the main thread; when it overflows the oldest position is dropped, which
-    // is right for a pointer since the newest position supersedes it anyway.
-    private final BlockingQueue<String> outbox = new ArrayBlockingQueue<>(64);
+    // there, so everything goes through a sender thread.
+    //
+    // Positions and button events must not share a queue. Positions arrive
+    // sixty times a second and a bounded queue overflows; dropping the oldest
+    // entry then eventually drops a press or a release, and a lost press means
+    // no click while a lost release means a stuck button. That was the cause of
+    // clicks working "sometimes".
+    //
+    // So: the latest position simply overwrites the previous one — nothing is
+    // lost that matters, since a newer position supersedes an older one — while
+    // button events queue up and are never dropped.
+    private final AtomicReference<String> pendingMove = new AtomicReference<>(null);
+    private final BlockingQueue<String> events = new LinkedBlockingQueue<>();
 
     private float lastU = -1f;
     private float lastV = -1f;
+
+    // While a button is held, small movements are swallowed until they exceed a
+    // threshold. A ray held in the hand always trembles, and forwarding that
+    // trembling turns a click into a tiny drag. GTK buttons tolerate it;
+    // a browser reads it as text selection and the link never opens.
+    private static final float DRAG_THRESHOLD = 0.006f;
+    private boolean pressed = false;
+    private boolean dragging = false;
+    private float pressU = 0f;
+    private float pressV = 0f;
 
     public StreamView(Context context) {
         super(context);
@@ -231,6 +251,7 @@ public class StreamView extends SurfaceView implements SurfaceHolder.Callback {
                 inputOut = s.getOutputStream();
                 // Tell the agent which screen this window drives, before any
                 // coordinates. Without it they would address the whole desktop.
+                pendingMove.set(null);
                 inputOut.write(("use " + monitor + "\n").getBytes());
                 inputOut.flush();
                 Log.i(TAG, "input agent connected, driving monitor " + monitor);
@@ -245,12 +266,21 @@ public class StreamView extends SurfaceView implements SurfaceHolder.Callback {
 
     private void pumpOutbox() throws IOException {
         while (running) {
-            String line;
-            try {
-                line = outbox.take();
-            } catch (InterruptedException e) {
-                return;
+            // Button events first and in order, then the newest position.
+            // A press must never overtake the move that positions it.
+            String line = events.poll();
+            if (line == null) {
+                line = pendingMove.getAndSet(null);
             }
+            if (line == null) {
+                try {
+                    Thread.sleep(4);
+                } catch (InterruptedException e) {
+                    return;
+                }
+                continue;
+            }
+
             OutputStream out = inputOut;
             if (out == null) return;
             out.write(line.getBytes());
@@ -267,13 +297,14 @@ public class StreamView extends SurfaceView implements SurfaceHolder.Callback {
         inputOut = null;
     }
 
+    /** Button and scroll commands: queued, never dropped. */
     private void send(String line) {
-        if (!outbox.offer(line)) {
-            // Full: drop the oldest and retry once. Never block — this runs on
-            // the UI thread.
-            outbox.poll();
-            outbox.offer(line);
-        }
+        events.offer(line);
+    }
+
+    /** Positions: only the newest matters, so it replaces any pending one. */
+    private void sendMove(String line) {
+        pendingMove.set(line);
     }
 
     private void sendPosition(float x, float y) {
@@ -283,10 +314,18 @@ public class StreamView extends SurfaceView implements SurfaceHolder.Callback {
 
         float u = Math.min(Math.max(x / w, 0f), 1f);
         float v = Math.min(Math.max(y / h, 0f), 1f);
+
+        if (pressed && !dragging) {
+            if (Math.abs(u - pressU) < DRAG_THRESHOLD && Math.abs(v - pressV) < DRAG_THRESHOLD) {
+                return;   // still a click, not a drag
+            }
+            dragging = true;
+        }
+
         if (Math.abs(u - lastU) < 0.0002f && Math.abs(v - lastV) < 0.0002f) return;
         lastU = u;
         lastV = v;
-        send(String.format(Locale.US, "m %.5f %.5f%n", u, v));
+        sendMove(String.format(Locale.US, "m %.5f %.5f%n", u, v));
     }
 
     // The shell delivers the controller ray as hover events while the trigger
@@ -304,16 +343,28 @@ public class StreamView extends SurfaceView implements SurfaceHolder.Callback {
 
     @Override
     public boolean onTouchEvent(MotionEvent event) {
-        sendPosition(event.getX(), event.getY());
         switch (event.getActionMasked()) {
-            case MotionEvent.ACTION_DOWN:
+            case MotionEvent.ACTION_DOWN: {
+                // Position first, then the press: the button must land where
+                // the pointer already is.
+                sendPosition(event.getX(), event.getY());
+                int w = getWidth(), h = getHeight();
+                pressU = w > 0 ? event.getX() / w : 0f;
+                pressV = h > 0 ? event.getY() / h : 0f;
+                pressed = true;
+                dragging = false;
                 send("d left\n");
                 return true;
+            }
             case MotionEvent.ACTION_UP:
             case MotionEvent.ACTION_CANCEL:
+                sendPosition(event.getX(), event.getY());
                 send("u left\n");
+                pressed = false;
+                dragging = false;
                 return true;
             default:
+                sendPosition(event.getX(), event.getY());
                 return true;
         }
     }

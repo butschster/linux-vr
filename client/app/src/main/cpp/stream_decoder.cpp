@@ -10,7 +10,9 @@
 #include <media/NdkMediaCodec.h>
 #include <media/NdkMediaFormat.h>
 
+#include <chrono>
 #include <cstring>
+#include <thread>
 #include <vector>
 
 #include "log.h"
@@ -139,7 +141,17 @@ void StreamDecoder::drainThread() {
 }
 
 void StreamDecoder::receiveThread() {
-    socket_ = connectToHost();
+    // Keep retrying. The host re-listens after every disconnect, so a client
+    // restart routinely lands in the gap between one ffmpeg exiting and the
+    // next one binding the port. Giving up on the first refusal leaves a black
+    // screen until someone restarts the app by hand.
+    while (running_.load()) {
+        socket_ = connectToHost();
+        if (socket_ >= 0) break;
+        for (int i = 0; i < 10 && running_.load(); ++i) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        }
+    }
     if (socket_ < 0) {
         running_.store(false);
         return;

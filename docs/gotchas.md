@@ -192,6 +192,36 @@ the headset is harmless — that is the point of a composition layer: it is
 world-locked and the compositor reprojects it at 90 Hz regardless of the stream
 rate.
 
+### Which monitor kmsgrab captures is not guessable — ask the kernel
+
+kmsgrab picks the first plane that has a framebuffer, and that is not
+necessarily the primary monitor. Guessing from what the picture looks like
+wastes time, because the pointer mapping depends on the answer and a wrong
+mapping puts every click on the neighbouring screen.
+
+Resolve it in two steps. First, the CRTC kmsgrab chose:
+
+```sh
+sudo ffmpeg -loglevel debug -device /dev/dri/card1 -f kmsgrab -i - -t 0.2 -f null - 2>&1 \
+    | grep -i 'Using plane'
+# [kmsgrab] Plane 149: CRTC 368 FB 455.
+# [kmsgrab] Using plane 149 to locate framebuffers.
+```
+
+Then the connector on that CRTC:
+
+```sh
+sudo sh -c 'cat /sys/kernel/debug/dri/*/state' | grep -E '^(crtc|connector)|	crtc='
+# crtc[368]: crtc-1
+# connector[388]: HDMI-A-2
+# 	crtc=crtc-1
+```
+
+So CRTC 368 is HDMI-A-2, and the input agent needs `--monitor HDMI-2`.
+
+Note the naming difference: DRM connectors are `HDMI-A-1`/`HDMI-A-2` while
+GNOME's logical monitors are `HDMI-1`/`HDMI-2`. They correspond in order.
+
 ### CBR is the wrong rate control for a desktop
 
 With CBR 100M on a still desktop the pipeline ran at **0.49x real time** and the

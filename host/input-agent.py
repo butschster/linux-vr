@@ -29,13 +29,57 @@ Usage:
 """
 
 import argparse
-import ctypes
 import fcntl
+import json
 import os
 import socket
 import struct
+import subprocess
 import sys
 import time
+
+
+def desktop_layout():
+    """Logical monitor rectangles, keyed by connector, from mutter.
+
+    Needed because a virtual absolute pointer addresses the whole desktop while
+    the stream shows a single monitor. Without the mapping, the left half of the
+    layer lands on the neighbouring screen — the coordinates are off by exactly
+    the ratio of one monitor to the whole desktop.
+    """
+    try:
+        out = subprocess.run(
+            ["busctl", "--user", "--json=short", "call",
+             "org.gnome.Mutter.DisplayConfig", "/org/gnome/Mutter/DisplayConfig",
+             "org.gnome.Mutter.DisplayConfig", "GetCurrentState"],
+            capture_output=True, text=True, timeout=10).stdout
+        data = json.loads(out)["data"]
+    except Exception:
+        return {}, (0, 0)
+
+    sizes = {}
+    for monitor in data[1]:
+        connector = monitor[0][0]
+        for mode in monitor[1]:
+            # mode: id, width, height, refresh, preferred_scale, ..., properties
+            props = mode[6] if len(mode) > 6 else {}
+            if isinstance(props, dict) and props.get("is-current", {}).get("data"):
+                sizes[connector] = (mode[1], mode[2])
+                break
+
+    rects = {}
+    total_w = total_h = 0
+    for lm in data[2]:
+        x, y = lm[0], lm[1]
+        for m in lm[5]:
+            connector = m[0]
+            w, h = sizes.get(connector, (0, 0))
+            if w and h:
+                rects[connector] = (x, y, w, h)
+                total_w = max(total_w, x + w)
+                total_h = max(total_h, y + h)
+
+    return rects, (total_w, total_h)
 
 # ---------------------------------------------------------------- uinput ABI
 
@@ -74,7 +118,12 @@ UI_SET_PROPBIT = _iow(110, 4)
 
 
 class VirtualPointer:
-    def __init__(self, name: str = "linux-vr pointer"):
+    def __init__(self, name: str = "linux-vr pointer", region=None, desktop=None):
+        # region: (x, y, w, h) of the captured monitor inside the desktop.
+        # None means the layer covers the whole desktop.
+        self.region = region
+        self.desktop = desktop
+
         try:
             self.fd = os.open("/dev/uinput", os.O_WRONLY | os.O_NONBLOCK)
         except PermissionError:
@@ -125,6 +174,16 @@ class VirtualPointer:
     def move(self, x: float, y: float) -> None:
         x = min(max(x, 0.0), 1.0)
         y = min(max(y, 0.0), 1.0)
+
+        # Fractions of the layer become fractions of the whole desktop, so that
+        # pointing at the middle of the streamed monitor lands in the middle of
+        # that monitor and not in the middle of the desktop.
+        if self.region and self.desktop and self.desktop[0] and self.desktop[1]:
+            rx, ry, rw, rh = self.region
+            dw, dh = self.desktop
+            x = (rx + x * rw) / dw
+            y = (ry + y * rh) / dh
+
         self._emit(EV_ABS, ABS_X, int(x * ABS_MAX))
         self._emit(EV_ABS, ABS_Y, int(y * ABS_MAX))
         self._sync()
@@ -183,9 +242,28 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--port", type=int, default=9101)
     ap.add_argument("--host", default="0.0.0.0")
+    ap.add_argument("--monitor", default=None,
+                    help="connector the stream captures, e.g. HDMI-2. "
+                         "Without it the layer is mapped onto the whole desktop, "
+                         "which is wrong as soon as there is more than one screen.")
     args = ap.parse_args()
 
-    pointer = VirtualPointer()
+    rects, desktop = desktop_layout()
+    region = None
+    if rects:
+        print(f"desktop {desktop[0]}x{desktop[1]}, monitors:")
+        for connector, r in sorted(rects.items()):
+            marker = " <- streamed" if connector == args.monitor else ""
+            print(f"    {connector}: {r[2]}x{r[3]} at +{r[0]}+{r[1]}{marker}")
+        if args.monitor:
+            region = rects.get(args.monitor)
+            if region is None:
+                sys.exit(f"unknown connector {args.monitor}")
+        elif len(rects) > 1:
+            print("WARNING: several monitors and no --monitor given; the pointer "
+                  "will address the whole desktop and land on the wrong screen.")
+
+    pointer = VirtualPointer(region=region, desktop=desktop)
     print(f"virtual pointer created, listening on {args.host}:{args.port}")
 
     srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)

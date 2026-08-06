@@ -35,11 +35,13 @@ surfaces, which Sunshine does not provide.
 ## Layout
 
 ```
-client/     native OpenXR app (Gradle + CMake + NDK, no Unity)
-host/       Ubuntu-side scripts: test material generation, capture, streaming
-docs/       measurements, decisions, traps — read before changing anything
-vendor/     external sources, not in git (see docs/gotchas.md)
-assets/     generated test videos, not in git
+client/app    native OpenXR app (Gradle + CMake + NDK, no Unity)
+client/panel  the streamed desktop as an ordinary 2D window — the one in daily use
+client/term   native terminal: text over a socket, drawn here, no video involved
+host/         Ubuntu-side agents and scripts: capture, streaming, input, voice, pty
+docs/         measurements, decisions, traps — read before changing anything
+vendor/       external sources, not in git (see docs/gotchas.md)
+assets/       generated test videos, not in git
 ```
 
 ### Key client files
@@ -51,6 +53,18 @@ assets/     generated test videos, not in git
 | `stream_decoder.cpp` | same, but from a live TCP H.264 stream |
 | `probe.cpp` | runtime capability diagnostics, runs at startup |
 | `egl_context.cpp` | pbuffer context, exists only to bind OpenXR |
+
+### Key terminal-client files
+
+| | |
+|---|---|
+| `host/pty-agent.py` | the pty, the foreground-process detection, and the bar's contents |
+| `client/term/.../HostSession.java` | socket transport in place of Termux's JNI pty |
+| `client/term/.../TermView.java` | drawing and input, written against the emulator directly |
+| `client/term/.../ContextBar.java` | draws whatever buttons the host sent; knows no tools |
+| `client/term/src/main/java/com/termux/` | vendored Apache-2.0 emulator, see `client/term/NOTICE.md` |
+
+Design and requirements: [`docs/terminal-app.md`](docs/terminal-app.md).
 
 ## Principles that must not be broken
 
@@ -68,6 +82,11 @@ updates at headset rate and therefore stays instant regardless of stream lag.
 
 **The scene is empty.** No custom geometry is rendered at all. The EGL context
 exists solely because creating an OpenXR session requires one.
+
+**The host decides what the terminal's bar offers, the client only draws it.**
+The host owns the pty, so it can read the foreground process group rather than
+guess at it, and it has the filesystem the buttons refer to. A tool is added by
+editing a table in `pty-agent.py`, never by rebuilding the APK.
 
 **Measure, don't assume.** Every number in `docs/` was obtained on this
 hardware. A new claim about performance or readability must rest on a

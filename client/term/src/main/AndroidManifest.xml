@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Dictation. Also requested at runtime; without the runtime grant the
+         recorder returns no samples rather than failing loudly. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+
+    <!-- No VR features on purpose: declaring them is what makes Horizon OS take
+         the headset. A plain 2D app gets a window, and windows multitask. -->
+
+    <application
+        android:allowBackup="false"
+        android:label="linux-vr term"
+        android:theme="@android:style/Theme.Material.NoActionBar">
+
+        <!-- documentLaunchMode="always" gives every launch its own task, so
+             several terminals can be open side by side in the shell — one per
+             project, the way tabs are used at the desk. -->
+        <activity
+            android:name=".TermActivity"
+            android:exported="true"
+            android:documentLaunchMode="always"
+            android:resizeableActivity="true"
+            android:windowSoftInputMode="adjustResize|stateHidden"
+            android:configChanges="density|keyboard|keyboardHidden|navigation|orientation|screenLayout|screenSize|uiMode">
+
+            <!-- Sized so text lands near the measured comfort threshold without
+                 the user resizing anything: the shell renders roughly 1.25 px
+                 per dp here, so 1600dp is about 2000 px across. At the default
+                 18 px cell width that is ~110 columns, which is what a terminal
+                 wants and what the panel window (2048dp) proved readable. -->
+            <layout
+                android:defaultWidth="1600dp"
+                android:defaultHeight="1000dp"
+                android:minWidth="480dp"
+                android:minHeight="360dp"
+                android:gravity="center" />
+
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+
+</manifest>

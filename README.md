@@ -9,9 +9,16 @@ because the measurements and platform traps collected along the way weren't
 written down anywhere else — they live in [`docs/`](docs/), and the shortest
 path to not repeating them is [`docs/references.md`](docs/references.md).
 
-## Two clients, and why the simpler one won
+## Three clients
 
-The repository holds two clients. The panel one is what you want.
+`client/term` is the newest and, for the work this is actually used for, the one
+that matters: a **native terminal**, where the host sends the bytes a shell
+produces and the headset draws the glyphs itself. No encoder, no scaling, no
+video at all — and a bar under it whose buttons follow what is running in that
+shell. Requirements and design: [`docs/terminal-app.md`](docs/terminal-app.md).
+
+The other two show the desktop as video. Between those, the panel one is what
+you want.
 
 | | `client/panel` — **use this** | `client/app` — immersive |
 |---|---|---|
@@ -111,11 +118,13 @@ beside other apps, and the shell's pointer drives the Linux cursor.
 - [x] Immersive client: `MediaCodec` → surface swapchain → cylinder layer,
       passthrough, draggable screen, controller-ray pointer
 - [x] Panel client: a 2D window that multitasks, with pointer and click
-- [ ] Keyboard visible in the headset
+- [x] Keyboard and dictation into the Linux cursor — [`docs/voice-control.md`](docs/voice-control.md)
+- [x] One window per monitor, discovered at runtime
+- [x] Terminal client, host side: pty agent with foreground detection and a
+      context-driven bar — [`docs/terminal-app.md`](docs/terminal-app.md)
+- [ ] Terminal client in the headset: builds, not yet run on the device
 - [ ] Virtual display at arbitrary resolution, instead of mirroring a physical one
-- [ ] Voice control — [`docs/voice-control.md`](docs/voice-control.md)
 - [ ] Multiple independent monitor layers
-- [ ] A native terminal client — [`docs/terminal-client.md`](docs/terminal-client.md)
 - [ ] Panel aspect ratio: the window does not yet keep 16:9
 
 ## Running
@@ -140,6 +149,20 @@ adb shell am start -n dev.butschster.linuxvr.panel/.PanelActivity
 
 Push the file with `adb push`, not `adb shell echo >` — the latter creates it
 mode 660 owned by `shell`, and the app cannot read it.
+
+### The terminal client
+
+Nothing is captured or encoded — only a shell is served:
+
+```sh
+./host/pty-agent.py --cwd ~/repos          # :9103
+./host/voice-agent.py                      # :9102, only for dictation
+
+cd client && ./gradlew :term:assembleDebug
+adb install -r term/build/outputs/apk/debug/term-debug.apk
+adb push host.txt /sdcard/Android/data/dev.butschster.linuxvr.term/files/
+adb shell am start -n dev.butschster.linuxvr.term/.TermActivity
+```
 
 ## Building
 
@@ -189,7 +212,8 @@ Full numbers in [`docs/host-baseline.md`](docs/host-baseline.md).
 | [`latency-budget.md`](docs/latency-budget.md) | per-stage latency budget |
 | [`gotchas.md`](docs/gotchas.md) | traps: Horizon OS, Sunshine, amdgpu, build |
 | [`references.md`](docs/references.md) | where to read instead of guessing |
-| [`terminal-client.md`](docs/terminal-client.md) | rendering the terminal natively instead of streaming it |
+| [`terminal-client.md`](docs/terminal-client.md) | why render the terminal natively instead of streaming it |
+| [`terminal-app.md`](docs/terminal-app.md) | the terminal client: requirements, protocol, the context bar |
 | [`voice-control.md`](docs/voice-control.md) | voice control design |
 
 ## License

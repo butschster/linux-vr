@@ -32,6 +32,11 @@ Wire protocol, one connection per utterance or per typed string:
         a text field is itself the place to fix a misheard word, and a review
         step in between turns two seconds of dictation into four.
 
+    "asr <rate> <channels>\\n" + raw signed 16-bit samples
+        transcribe and return the text without inserting it anywhere. The
+        terminal client uses this: it owns the pty and writes the transcript
+        into it directly, so nothing here has to fight the clipboard.
+
     "text\\n" + UTF-8
         insert as is — this is the on-screen keyboard path
 
@@ -294,7 +299,11 @@ def handle(conn: socket.socket, keyboard: VirtualKeyboard, addr: str) -> None:
         return
 
     rate, channels = EXPECTED_RATE, 1
-    if data.startswith(b"pcm "):
+    # "asr" is "pcm" without the insertion: the terminal client owns a pty and
+    # writes the transcript into it itself, so the whole clipboard-and-uinput
+    # path — the part that depends on layouts and on mutter — is not involved.
+    insert = not data.startswith(b"asr ")
+    if data.startswith(b"pcm ") or data.startswith(b"asr "):
         header, _, rest = data.partition(b"\n")
         fields = header.decode(errors="ignore").split()
         if len(fields) >= 3:
@@ -317,7 +326,7 @@ def handle(conn: socket.socket, keyboard: VirtualKeyboard, addr: str) -> None:
             pass
         return
 
-    if text:
+    if text and insert:
         insert_text(keyboard, text)
     try:
         conn.sendall((text + "\n").encode())

@@ -28,6 +28,11 @@ const char *kRequiredExtensions[] = {
     "XR_FB_composition_layer_image_layout",
 };
 
+// Nice to have, but the app must still start without them.
+const char *kOptionalExtensions[] = {
+    "XR_FB_passthrough",
+};
+
 // Bounds for live geometry tuning with the stick
 constexpr float kMinRadius = 0.8f;
 constexpr float kMaxRadius = 3.0f;
@@ -59,10 +64,33 @@ bool XrApp::createInstance(android_app *app) {
     androidInfo.applicationVM = app->activity->vm;
     androidInfo.applicationActivity = app->activity->clazz;
 
+    // Required extensions go in unconditionally; optional ones only if the
+    // runtime lists them, so the app still starts on a device without them.
+    std::vector<const char *> enabled(std::begin(kRequiredExtensions),
+                                      std::end(kRequiredExtensions));
+    {
+        uint32_t count = 0;
+        xrEnumerateInstanceExtensionProperties(nullptr, 0, &count, nullptr);
+        std::vector<XrExtensionProperties> available(count, {XR_TYPE_EXTENSION_PROPERTIES});
+        if (count > 0 &&
+            XR_SUCCEEDED(xrEnumerateInstanceExtensionProperties(nullptr, count, &count,
+                                                                available.data()))) {
+            for (const char *opt : kOptionalExtensions) {
+                for (const auto &e : available) {
+                    if (std::strcmp(e.extensionName, opt) == 0) {
+                        enabled.push_back(opt);
+                        LOGI("optional extension enabled: %s", opt);
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
     XrInstanceCreateInfo ci{XR_TYPE_INSTANCE_CREATE_INFO};
     ci.next = &androidInfo;
-    ci.enabledExtensionCount = sizeof(kRequiredExtensions) / sizeof(kRequiredExtensions[0]);
-    ci.enabledExtensionNames = kRequiredExtensions;
+    ci.enabledExtensionCount = static_cast<uint32_t>(enabled.size());
+    ci.enabledExtensionNames = enabled.data();
     std::strcpy(ci.applicationInfo.applicationName, "linux-vr");
     ci.applicationInfo.applicationVersion = 1;
     std::strcpy(ci.applicationInfo.engineName, "none");
@@ -74,6 +102,28 @@ bool XrApp::createInstance(android_app *app) {
     XrSystemGetInfo sysInfo{XR_TYPE_SYSTEM_GET_INFO};
     sysInfo.formFactor = XR_FORM_FACTOR_HEAD_MOUNTED_DISPLAY;
     if (!XR_CHECK(xrGetSystem(instance_, &sysInfo, &systemId_))) return false;
+
+    // Prefer passthrough. The runtime lists blend modes in its own order of
+    // preference, but we want the room visible regardless of that order.
+    uint32_t blendCount = 0;
+    xrEnumerateEnvironmentBlendModes(instance_, systemId_,
+                                     XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO, 0, &blendCount,
+                                     nullptr);
+    if (blendCount > 0) {
+        std::vector<XrEnvironmentBlendMode> modes(blendCount);
+        if (XR_SUCCEEDED(xrEnumerateEnvironmentBlendModes(
+                instance_, systemId_, XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO, blendCount,
+                &blendCount, modes.data()))) {
+            for (const auto m : modes) {
+                LOGI("blend mode available: %d", static_cast<int>(m));
+                if (m == XR_ENVIRONMENT_BLEND_MODE_ALPHA_BLEND) {
+                    blendMode_ = m;
+                }
+            }
+        }
+    }
+    LOGI("using blend mode %d (%s)", static_cast<int>(blendMode_),
+         blendMode_ == XR_ENVIRONMENT_BLEND_MODE_OPAQUE ? "opaque" : "passthrough");
 
     return XR_CHECK(xrGetInstanceProcAddr(
         instance_, "xrCreateSwapchainAndroidSurfaceKHR",
@@ -123,6 +173,7 @@ bool XrApp::init(android_app *app) {
     if (!createSession()) return false;
     if (!createActions()) return false;
     if (!createCursor()) return false;
+    createPassthrough();  // optional: no passthrough just means a black backdrop
 
     LOGI("OpenXR session created");
     return true;
@@ -209,6 +260,12 @@ bool XrApp::createActions() {
     gripInfo.actionType = XR_ACTION_TYPE_FLOAT_INPUT;
     if (!XR_CHECK(xrCreateAction(actionSet_, &gripInfo, &gripAction_))) return false;
 
+    XrActionCreateInfo clickInfo{XR_TYPE_ACTION_CREATE_INFO};
+    std::strcpy(clickInfo.actionName, "click");
+    std::strcpy(clickInfo.localizedActionName, "Left click");
+    clickInfo.actionType = XR_ACTION_TYPE_FLOAT_INPUT;
+    if (!XR_CHECK(xrCreateAction(actionSet_, &clickInfo, &clickAction_))) return false;
+
     XrActionCreateInfo recenterInfo{XR_TYPE_ACTION_CREATE_INFO};
     std::strcpy(recenterInfo.actionName, "recenter");
     std::strcpy(recenterInfo.localizedActionName, "Focus view");
@@ -220,12 +277,14 @@ bool XrApp::createActions() {
     XrPath bPath = XR_NULL_PATH;
     XrPath aimPath = XR_NULL_PATH;
     XrPath gripPath = XR_NULL_PATH;
+    XrPath triggerPath = XR_NULL_PATH;
     XrPath profilePath = XR_NULL_PATH;
     xrStringToPath(instance_, "/user/hand/right/input/thumbstick", &stickPath);
     xrStringToPath(instance_, "/user/hand/right/input/a/click", &aPath);
     xrStringToPath(instance_, "/user/hand/right/input/b/click", &bPath);
     xrStringToPath(instance_, "/user/hand/right/input/aim/pose", &aimPath);
     xrStringToPath(instance_, "/user/hand/right/input/squeeze/value", &gripPath);
+    xrStringToPath(instance_, "/user/hand/right/input/trigger/value", &triggerPath);
     xrStringToPath(instance_, "/interaction_profiles/oculus/touch_controller", &profilePath);
 
     const XrActionSuggestedBinding bindings[] = {
@@ -234,6 +293,7 @@ bool XrApp::createActions() {
         {recenterAction_, bPath},
         {aimAction_, aimPath},
         {gripAction_, gripPath},
+        {clickAction_, triggerPath},
     };
     XrInteractionProfileSuggestedBinding suggested{XR_TYPE_INTERACTION_PROFILE_SUGGESTED_BINDING};
     suggested.interactionProfile = profilePath;
@@ -328,6 +388,46 @@ void XrApp::updateDrag(XrTime time, bool gripHeld) {
 
     geometry.yaw = dragStartLayerYaw_ + deltaYaw;
     geometry.heightOffset = dragStartLayerHeight_ + (pointerHeight - dragStartPointerHeight_);
+}
+
+// Passthrough is not an environment blend mode on Meta runtimes: the blend mode
+// stays OPAQUE and the room arrives as a layer submitted underneath everything
+// else. Failure here is not fatal — the screen simply floats on black.
+bool XrApp::createPassthrough() {
+    PFN_xrCreatePassthroughFB createPassthroughFB = nullptr;
+    PFN_xrCreatePassthroughLayerFB createLayerFB = nullptr;
+    PFN_xrPassthroughStartFB startFB = nullptr;
+
+    if (XR_FAILED(xrGetInstanceProcAddr(instance_, "xrCreatePassthroughFB",
+                                        reinterpret_cast<PFN_xrVoidFunction *>(&createPassthroughFB))) ||
+        XR_FAILED(xrGetInstanceProcAddr(instance_, "xrCreatePassthroughLayerFB",
+                                        reinterpret_cast<PFN_xrVoidFunction *>(&createLayerFB))) ||
+        XR_FAILED(xrGetInstanceProcAddr(instance_, "xrPassthroughStartFB",
+                                        reinterpret_cast<PFN_xrVoidFunction *>(&startFB)))) {
+        LOGW("passthrough entry points unavailable, staying on black");
+        return false;
+    }
+
+    XrPassthroughCreateInfoFB info{XR_TYPE_PASSTHROUGH_CREATE_INFO_FB};
+    info.flags = XR_PASSTHROUGH_IS_RUNNING_AT_CREATION_BIT_FB;
+    if (XR_FAILED(createPassthroughFB(session_, &info, &passthrough_))) {
+        LOGW("xrCreatePassthroughFB failed, staying on black");
+        return false;
+    }
+
+    XrPassthroughLayerCreateInfoFB layerInfo{XR_TYPE_PASSTHROUGH_LAYER_CREATE_INFO_FB};
+    layerInfo.passthrough = passthrough_;
+    layerInfo.purpose = XR_PASSTHROUGH_LAYER_PURPOSE_RECONSTRUCTION_FB;
+    layerInfo.flags = XR_PASSTHROUGH_IS_RUNNING_AT_CREATION_BIT_FB;
+    if (XR_FAILED(createLayerFB(session_, &layerInfo, &passthroughLayer_))) {
+        LOGW("xrCreatePassthroughLayerFB failed, staying on black");
+        return false;
+    }
+
+    startFB(passthrough_);
+    passthroughEnabled_ = true;
+    LOGI("passthrough on: the screen floats in the room");
+    return true;
 }
 
 bool XrApp::createCursor() {
@@ -466,6 +566,8 @@ void XrApp::updateCursor(XrTime time) {
     const float yaw = -(angle + geometry.yaw);
     cursorPose_.orientation = {0.0f, std::sin(yaw * 0.5f), 0.0f, std::cos(yaw * 0.5f)};
     cursorVisible_ = true;
+
+    input_.sendMove(cursorU_, cursorV_);
 }
 
 void XrApp::applyInput(XrTime time) {
@@ -496,6 +598,22 @@ void XrApp::applyInput(XrTime time) {
         gripHeld = gripState.currentState > 0.7f;
     }
     updateDrag(time, gripHeld);
+
+    // The trigger is the left mouse button. Reported on transitions only —
+    // repeating the same state every frame would flood the agent and produce
+    // stuck buttons if a packet went missing.
+    get.action = clickAction_;
+    XrActionStateFloat clickState{XR_TYPE_ACTION_STATE_FLOAT};
+    if (XR_SUCCEEDED(xrGetActionStateFloat(session_, &get, &clickState)) && clickState.isActive) {
+        // Asymmetric thresholds: press late, release early. A click that
+        // registers slightly late is unnoticeable; one that sticks is not.
+        const bool held = clickHeld_ ? clickState.currentState > 0.4f
+                                     : clickState.currentState > 0.7f;
+        if (held != clickHeld_) {
+            clickHeld_ = held;
+            input_.sendButton("left", held);
+        }
+    }
 
     get.action = resetAction_;
     XrActionStateBoolean resetState{XR_TYPE_ACTION_STATE_BOOLEAN};
@@ -594,6 +712,15 @@ void XrApp::renderFrame() {
     std::vector<XrCompositionLayerBaseHeader *> layers;
     XrCompositionLayerCylinderKHR cylinder{XR_TYPE_COMPOSITION_LAYER_CYLINDER_KHR};
     XrCompositionLayerImageLayoutFB imageLayout{XR_TYPE_COMPOSITION_LAYER_IMAGE_LAYOUT_FB};
+    XrCompositionLayerPassthroughFB passthroughLayer{XR_TYPE_COMPOSITION_LAYER_PASSTHROUGH_FB};
+
+    // The room goes first — everything else is composited on top of it
+    if (frameState.shouldRender && passthroughEnabled_) {
+        passthroughLayer.flags = XR_COMPOSITION_LAYER_BLEND_TEXTURE_SOURCE_ALPHA_BIT;
+        passthroughLayer.space = XR_NULL_HANDLE;
+        passthroughLayer.layerHandle = passthroughLayer_;
+        layers.push_back(reinterpret_cast<XrCompositionLayerBaseHeader *>(&passthroughLayer));
+    }
 
     if (frameState.shouldRender && videoSwapchain_ != XR_NULL_HANDLE) {
         // Vertical flip: compensates for the difference in origin between an
@@ -657,9 +784,7 @@ void XrApp::renderFrame() {
 
     XrFrameEndInfo endInfo{XR_TYPE_FRAME_END_INFO};
     endInfo.displayTime = frameState.predictedDisplayTime;
-    // OPAQUE: we draw on black for now. Blending with passthrough is a separate
-    // step, via XR_FB_composition_layer_alpha_blend.
-    endInfo.environmentBlendMode = XR_ENVIRONMENT_BLEND_MODE_OPAQUE;
+    endInfo.environmentBlendMode = blendMode_;
     endInfo.layerCount = static_cast<uint32_t>(layers.size());
     endInfo.layers = layers.data();
     XR_CHECK(xrEndFrame(session_, &endInfo));

@@ -18,6 +18,7 @@
 #include <vector>
 
 #include "egl_context.h"
+#include "input_sender.h"
 
 struct android_app;
 
@@ -64,6 +65,10 @@ public:
     // single copy through system memory.
     ANativeWindow *createVideoSurface(uint32_t width, uint32_t height);
 
+    // Connects the pointer to the host agent. Optional: without it the cursor
+    // still draws in the headset, it just does not drive the desktop.
+    void connectInput(const std::string &host, int port) { input_.connect(host, port); }
+
     // Processes runtime events. Returns false when it is time to quit.
     bool pollEvents(android_app *app);
 
@@ -88,6 +93,17 @@ private:
     XrSession session_ = XR_NULL_HANDLE;
     XrSpace space_ = XR_NULL_HANDLE;
     XrSessionState state_ = XR_SESSION_STATE_UNKNOWN;
+    XrEnvironmentBlendMode blendMode_ = XR_ENVIRONMENT_BLEND_MODE_OPAQUE;
+
+    // Passthrough: a screen floating in the actual room reads as a window,
+    // while the same screen on black reads as a game that has taken over the
+    // headset. On Meta runtimes this is not an environment blend mode but a
+    // dedicated extension plus a layer submitted underneath everything else.
+    XrPassthroughFB passthrough_ = XR_NULL_HANDLE;
+    XrPassthroughLayerFB passthroughLayer_ = XR_NULL_HANDLE;
+    bool passthroughEnabled_ = false;
+
+    bool createPassthrough();
     bool sessionRunning_ = false;
     bool exitRequested_ = false;
 
@@ -104,6 +120,9 @@ private:
     XrAction aimAction_ = XR_NULL_HANDLE;
     XrAction gripAction_ = XR_NULL_HANDLE;
     XrAction recenterAction_ = XR_NULL_HANDLE;
+    XrAction clickAction_ = XR_NULL_HANDLE;
+    bool clickHeld_ = false;
+    InputSender input_;
     XrSpace aimSpace_ = XR_NULL_HANDLE;
     XrSpace viewSpace_ = XR_NULL_HANDLE;
     bool actionsAttached_ = false;

@@ -16,6 +16,15 @@
         android:required="false" />
     <uses-permission android:name="com.oculus.permission.HAND_TRACKING" />
 
+    <!-- Passthrough is gated behind this declaration: without it the
+         XR_FB_passthrough extension is not even listed by the runtime, and the
+         only environment blend mode offered is OPAQUE. A screen floating in the
+         real room reads as a window; the same screen on black reads as a game
+         that has taken over the headset. -->
+    <uses-feature
+        android:name="com.oculus.feature.PASSTHROUGH"
+        android:required="false" />
+
     <uses-permission android:name="android.permission.INTERNET" />
 
     <application

@@ -30,6 +30,8 @@ namespace {
 // If the file is absent, the local test video is played instead.
 constexpr const char *kHostFileName = "host.txt";
 constexpr int kStreamPort = 9100;
+// The input agent runs on the same host as the stream.
+constexpr int kInputPort = 9101;
 
 std::string readHostFile(const std::string &path) {
     FILE *f = fopen(path.c_str(), "r");
@@ -136,6 +138,7 @@ void android_main(android_app *app) {
         LOGI("no %s — playing local file %s", kHostFileName, filePath.c_str());
     } else {
         LOGI("streaming from %s:%d", state.streamHost.c_str(), kStreamPort);
+        state.xr.connectInput(state.streamHost, kInputPort);
     }
 
     while (!app->destroyRequested) {

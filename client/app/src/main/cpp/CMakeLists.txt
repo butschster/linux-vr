@@ -19,6 +19,7 @@ add_library(linuxvr SHARED
     egl_context.cpp
     video_decoder.cpp
     stream_decoder.cpp
+    input_sender.cpp
     xr_app.cpp)
 
 target_link_libraries(linuxvr

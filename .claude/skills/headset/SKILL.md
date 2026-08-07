@@ -117,6 +117,45 @@ never happen, and if it does the signing key changed and that is a real defect.
 Sideloaded apps live under **Unknown Sources** in the library, not with the
 store apps.
 
+## Getting recordings and screenshots off
+
+The headset's own screen recorder writes here. Nothing else does, and the
+filename carries the app and the timestamp:
+
+```sh
+adb shell ls -lt /sdcard/Oculus/VideoShots      # recordings, newest first
+adb shell ls -lt /sdcard/Oculus/Screenshots
+```
+
+Pull the lot into `~/Videos/quest`:
+
+```sh
+mkdir -p ~/Videos/quest && adb pull /sdcard/Oculus/VideoShots ~/Videos/quest
+```
+
+Measured at **38 MB/s over USB** — a 77 MB recording in under two seconds. Do
+not reach for MTP for this: it is slower, it needs the headset's USB mode
+changed by hand, and changing that mode drops the adb connection you are
+probably using for something else. MTP is only worth it to *browse* in Files,
+and the switch lives in the headset's USB notification, not in any command here.
+
+Recordings are H.265 in an MP4 — fine for `ffprobe`, `mpv` and anything else,
+and worth checking before assuming a file is broken:
+
+```sh
+ffprobe -v error -show_entries format=duration,size:stream=codec_name,width,height \
+  -of default=noprint_wrappers=1 ~/Videos/quest/*.mp4
+```
+
+Disk pressure is rarely the reason to delete them — a Quest 3 has hundreds of
+gigabytes free. Check before tidying, and delete deliberately rather than as
+part of a pull:
+
+```sh
+adb shell df -h /sdcard | tail -1
+adb shell rm /sdcard/Oculus/VideoShots/<exact-name>.mp4
+```
+
 ## Poking the app from here
 
 ```sh

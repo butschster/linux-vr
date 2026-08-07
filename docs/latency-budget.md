@@ -24,6 +24,21 @@ One dropped frame per second feels worse than a steady extra 10 ms. The
 Moonlight overlay reports decode time, network latency and dropped frames —
 look at the tail of the distribution and the loss percentage.
 
+## The transport is ours, and that is now a decision
+
+Sunshine was once the plan for this layer. It is not any more: it replaces one
+layer and cannot give multiple independent monitor surfaces, which is the whole
+point of the project. See `CLAUDE.md`.
+
+What that costs is exactly the row above. **We have no FEC, no loss recovery and
+no bitrate adaptation** — on TCP a lost packet becomes head-of-line blocking,
+which is a frozen picture rather than a degraded one.
+
+Whether that matters is the measurement this page is still missing. If p99 and
+loss on the real link turn out bad, the choice is between taking Sunshine
+wholesale and putting FEC on our own transport. Until then, no feature list
+settles it.
+
 ## Where a custom client wins
 
 The jitter buffer is where Moonlight makes a reasonable default and a custom

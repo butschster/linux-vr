@@ -167,6 +167,7 @@ func serve(cfg config.Config, configPath string) {
 	live := &settings{cfg: cfg, path: configPath, capture: frames, voice: speech}
 
 	control.Version = version
+	tray.Version = version
 	api := &control.Server{
 		Name: cfg.Name, Bind: cfg.Bind, Port: config.ControlPort, Layout: layout,
 		Status:            func() map[string]control.Service { return live.status(services) },

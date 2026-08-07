@@ -35,6 +35,14 @@ import (
 // will render an icon, however correctly it is published.
 const watcherName = "org.kde.StatusNotifierWatcher"
 
+// Where this came from. In the menu because a machine running a server someone
+// sideloaded six months ago should be able to say where to read about it.
+const repoURL = "https://github.com/vr-meta/linux-vr"
+
+// Version is stamped by main, so the menu can say which build is running when
+// a headset and a host disagree about the wire.
+var Version = "dev"
+
 // State is what the icon has to show. Polled rather than pushed, because the
 // things it reports — a window opening, an encoder stopping, a key going
 // missing — happen in three packages and none of them should have to know that
@@ -151,7 +159,9 @@ func ready(status func() State) {
 	problem.Hide()
 
 	systray.AddSeparator()
-	copyAddress := systray.AddMenuItem("Copy the address", "put it in the clipboard for typing into a headset")
+	copyAddress := systray.AddMenuItem("Copy the address",
+		"put it in the clipboard for typing into a headset")
+	project := systray.AddMenuItem("linux-vr "+Version+" on GitHub", repoURL)
 
 	go func() {
 		for {
@@ -160,6 +170,8 @@ func ready(status func() State) {
 				open(status().Local)
 			case <-copyAddress.ClickedCh:
 				clipboard(status().Address)
+			case <-project.ClickedCh:
+				open(repoURL)
 			}
 		}
 	}()

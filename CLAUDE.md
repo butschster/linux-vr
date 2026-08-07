@@ -24,13 +24,38 @@ architecturally** — that means the in-headset client. Everything else is reuse
 
 | Layer | Choice |
 |---|---|
-| Host capture + encode | KMS + DMA-BUF → VAAPI |
-| Transport | currently a direct TCP pipe; eventually Sunshine + `moonlight-common-c` |
+| Host capture + encode | KMS + DMA-BUF → VAAPI, driven by our own server |
+| Transport | our own: H.264 over TCP, an encoder per connection |
 | **In-headset client** | **custom, native OpenXR** |
 
-If you feel tempted to write something custom for the first two rows, that is
-almost always the wrong move. The one exception is multiple independent monitor
-surfaces, which Sunshine does not provide.
+If you feel tempted to write something custom for the first row, that is almost
+always the wrong move — `ffmpeg` does the work and the server only decides when
+to start it.
+
+### Sunshine is not the plan any more
+
+It used to be: this table once said the transport would eventually become
+Sunshine plus `moonlight-common-c`. That was written when the host was a shell
+script with `ffmpeg listen=1`, no reconnection and one monitor.
+
+It is no longer the right trade. Sunshine would replace exactly one layer, and
+it does not provide **multiple independent monitor surfaces** — which is the
+reason this project exists. The Go server already does capture, per-connection
+encoders, reconnection, discovery, control, input and voice.
+
+What Sunshine would still buy, stated honestly, is the thing we do not have:
+FEC, loss recovery and bitrate adaptation over UDP, plus pairing and encryption.
+On TCP a lost packet becomes head-of-line blocking, which is a frozen picture —
+the worst failure mode for a desktop.
+
+So the question stays open, and it is a **measurement**, not an opinion: p99 and
+loss on the actual link, which `docs/latency-budget.md` already flags as the
+untested part. If the tail is bad, the choice is between adopting Sunshine
+wholesale (and losing multi-monitor) or putting FEC on our own transport. Do not
+decide it from a feature list.
+
+Sunshine is installed on the development machine and **disabled** — 27 MB, kept
+only so that comparison is one `systemctl --user enable --now` away.
 
 ## What is not here
 

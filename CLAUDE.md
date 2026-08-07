@@ -32,19 +32,49 @@ If you feel tempted to write something custom for the first two rows, that is
 almost always the wrong move. The one exception is multiple independent monitor
 surfaces, which Sunshine does not provide.
 
+## What is not here
+
+**The terminal client is a different product**, in
+[vr-meta/linux-terminal](https://github.com/vr-meta/linux-terminal). It streams
+no video at all — the host sends the bytes a shell produces and the headset
+draws the glyphs — so it shares neither a wire nor a dependency with this. Do
+not add a pty, a shell or a context bar here; that work belongs there.
+
+The two servers coexist on one machine and answer the same kind of discovery
+probe, on different ports and saying which service they are.
+
 ## Layout
 
 ```
-client/app    native OpenXR app (Gradle + CMake + NDK, no Unity)
-client/panel  the streamed desktop as an ordinary 2D window — the one in daily use
-client/term   native terminal: text over a socket, drawn here, no video involved
-host/         Ubuntu-side agents and scripts: capture, streaming, input, voice, pty
-docs/         measurements, decisions, traps — read before changing anything
-vendor/       external sources, not in git (see docs/gotchas.md)
-assets/       generated test videos, not in git
+host/             the Go server: capture, pointer, voice, discovery, control API
+client/app        the app — server manager, then a window per screen
+client/immersive  native OpenXR app (Gradle + CMake + NDK, no Unity)
+packaging/        the systemd user unit
+docs/             measurements, decisions, traps — read before changing anything
+vendor/           external sources, not in git (see docs/gotchas.md)
+assets/           generated test videos, not in git
 ```
 
+### Key server files
+
+| | |
+|---|---|
+| `internal/monitors/` | the monitor table everything else agrees on; mutter + DRM |
+| `internal/capture/` | one ffmpeg per connection, started when a window opens |
+| `internal/input/` | uinput absolute pointer, one region per connection |
+| `internal/voice/` | Whisper, the clipboard, and the keys a headset cannot press |
+| `internal/control/` | discovery datagram and `/v1/info` |
+
 ### Key client files
+
+| | |
+|---|---|
+| `ServersActivity.java` | the front door: discovery, saved servers, typed addresses |
+| `SessionActivity.java` | one machine, what it offers, a button per window |
+| `StreamView.java` | `MediaCodec` into a `SurfaceView`, and pointer events back |
+| `InputBar.java` | keyboard and dictation, in a window of its own |
+
+### Key immersive-client files
 
 | | |
 |---|---|
@@ -53,18 +83,6 @@ assets/       generated test videos, not in git
 | `stream_decoder.cpp` | same, but from a live TCP H.264 stream |
 | `probe.cpp` | runtime capability diagnostics, runs at startup |
 | `egl_context.cpp` | pbuffer context, exists only to bind OpenXR |
-
-### Key terminal-client files
-
-| | |
-|---|---|
-| `host/pty-agent.py` | the pty, the foreground-process detection, and the bar's contents |
-| `client/term/.../HostSession.java` | socket transport in place of Termux's JNI pty |
-| `client/term/.../TermView.java` | drawing and input, written against the emulator directly |
-| `client/term/.../ContextBar.java` | draws whatever buttons the host sent; knows no tools |
-| `client/term/src/main/java/com/termux/` | vendored Apache-2.0 emulator, see `client/term/NOTICE.md` |
-
-Design and requirements: [`docs/terminal-app.md`](docs/terminal-app.md).
 
 ## Principles that must not be broken
 
@@ -83,10 +101,15 @@ updates at headset rate and therefore stays instant regardless of stream lag.
 **The scene is empty.** No custom geometry is rendered at all. The EGL context
 exists solely because creating an OpenXR session requires one.
 
-**The host decides what the terminal's bar offers, the client only draws it.**
-The host owns the pty, so it can read the foreground process group rather than
-guess at it, and it has the filesystem the buttons refer to. A tool is added by
-editing a table in `pty-agent.py`, never by rebuilding the APK.
+**The client asks the server what it can do; it does not assume.** A host without
+`ffmpeg`, without the sudo rule, or without `/dev/uinput` looks identical from
+inside a window — black picture, dead pointer. `/v1/info` reports what works and
+why not, and the session screen shows the sentence. Any new capability follows
+the same shape.
+
+**Nothing is encoded while nobody is watching.** The server owns the stream
+listener and starts an encoder on accept. An encoder that runs whether or not a
+window is open is a laptop that is hot for no reason.
 
 **Measure, don't assume.** Every number in `docs/` was obtained on this
 hardware. A new claim about performance or readability must rest on a
@@ -95,14 +118,18 @@ measurement, not on a vendor spec sheet.
 ## Build and run
 
 ```sh
-cd client
-./gradlew assembleDebug
-adb install -r app/build/outputs/apk/debug/app-debug.apk
-adb shell am start -n dev.butschster.linuxvr/android.app.NativeActivity
+make run          # the server in this terminal
+make doctor       # what this machine is missing, before blaming the headset
+make dev          # rebuild the app onto the headset, then run the server
 adb logcat -s linux-vr
 ```
 
-`local.properties` with `sdk.dir` is not in git — create it locally.
+`client/local.properties` with `sdk.dir` is not in git — create it locally.
+
+The release signing key lives at `~/.config/linuxvr/release.keystore`, outside
+the repository, and the same key is a repository secret so CI signs identically.
+Losing it means every headset has to uninstall before the next release will
+install.
 
 ### Debugging techniques that saved time
 

@@ -272,32 +272,23 @@ probing encoders at startup, then says so itself:
 Do not build a diagnosis on them. The lines that matter come after and look
 like `Screencasting with KMS` / `Found monitor for DRM screencasting`.
 
-### A pty agent started from inside Claude Code poisons every shell it opens
+### A stale server on the port makes the new one invisible
 
-Claude Code exports `CLAUDECODE` and a set of `CLAUDE_CODE_*` markers into the
-processes it starts. `pty-agent.py` is usually launched from a terminal, and that
-terminal is often one Claude Code is already running in — so the shell in the
-headset inherited a child-session marker, and every `claude` started there ran
-with transcript saving off and a warning on the banner.
+A second server failed to bind and died; the first one kept serving, so testing
+a code change silently exercised the old code. Nothing about the client's
+behaviour hints at this — it connects and works.
 
-The agent now drops `CLAUDECODE` and everything beginning with `CLAUDE_CODE_`
-before exec'ing the shell. A shell in the headset is not a child of anything.
-
-### A stale agent on the port makes the new one invisible
-
-The second `pty-agent.py` failed to bind and died; the first one kept serving,
-so testing a code change silently exercised the old code. Nothing about the
-client's behaviour hints at this — it connects and works.
-
-The bind failure is loud, but only in the agent's own output. Before concluding
-that a change had no effect, check who actually holds the port:
+The bind failure is loud, but only in the server's own output, and the current
+one keeps running with whatever ports it did get. Before concluding that a change
+had no effect, check who actually holds the port:
 
 ```sh
-ss -ltnp | grep 9103
+ss -ltnp | grep -E '9099|910[0-9]'
 ```
 
-Killing it by pattern is its own trap: `pkill -f pty-agent` matches the command
-line of the shell running the `pkill`, and kills that instead. Kill by pid.
+Killing it by pattern is its own trap: `pkill -f linux-vr-server` matches the
+command line of the shell running the `pkill`, and kills that instead. Kill by
+pid, or by exact name with `pkill -x`.
 
 ## Build
 

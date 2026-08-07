@@ -1,0 +1,104 @@
+# Build both halves on every push.
+#
+# Separate from release.yml on purpose. That one runs on a tag, which means a
+# break introduced today is found on the day you try to ship — and by then it is
+# in the middle of a release rather than in the commit that caused it.
+name: ci
+
+on:
+  push:
+    branches: ["**"]
+    # Tags are release.yml's job; running both would build everything twice.
+    tags-ignore: ["**"]
+  # No pull_request trigger. Every branch here lives in this repository, so the
+  # push above already covers it, and adding one would run the whole thing twice
+  # for every PR.
+  workflow_dispatch:
+
+# A second push supersedes the first: nobody reads the result of a run for a
+# commit that has already been replaced.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  server:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+          # Nothing to cache: the server has no dependencies outside the
+          # standard library, so there is no go.sum for the cache to key on.
+          cache: false
+
+      # Formatting first, because it is the cheapest failure to fix and the
+      # noisiest one to leave in a diff.
+      - name: Check formatting
+        run: |
+          unformatted=$(gofmt -l ./cmd ./internal)
+          if [ -n "$unformatted" ]; then
+            echo "These files are not gofmt'd:"
+            echo "$unformatted"
+            exit 1
+          fi
+        working-directory: host
+
+      - name: Vet
+        run: go vet ./...
+        working-directory: host
+
+      - name: Test
+        run: go test ./...
+        working-directory: host
+
+      # For both architectures a Linux desktop is plausibly on. CGO off is what
+      # makes the binary run on a distribution older than this runner.
+      - name: Build
+        env:
+          CGO_ENABLED: "0"
+        run: |
+          for arch in amd64 arm64; do
+            GOOS=linux GOARCH=$arch go build -trimpath \
+              -ldflags "-s -w -X main.version=${GITHUB_SHA::7}" \
+              -o "linux-vr-server-linux-$arch" ./cmd/linux-vr-server
+          done
+        working-directory: host
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: server-${{ github.sha }}
+          path: host/linux-vr-server-linux-*
+          retention-days: 14
+
+  client:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: gradle
+
+      # A debug build, and unsigned by anything stable on purpose: this artifact
+      # is for reading a build failure, not for installing. Releases are signed
+      # by release.yml with the key held in the repository secrets.
+      - name: Build
+        run: ./gradlew :app:assembleDebug --no-daemon
+        working-directory: client
+
+      # The immersive client is not what anyone installs, but it is in the tree
+      # and it does break — it carries NDK and CMake, which the app does not.
+      - name: Build the immersive client
+        run: ./gradlew :immersive:assembleDebug --no-daemon
+        working-directory: client
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: client-${{ github.sha }}
+          path: client/app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 14

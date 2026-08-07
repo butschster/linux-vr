@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The launcher icon's background layer. A flat colour: Horizon OS draws the
+     icon small and at an angle, and anything with detail behind the foreground
+     turns to noise at that size. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="#12306E" />
+</shape>

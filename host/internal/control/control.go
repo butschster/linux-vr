@@ -197,6 +197,7 @@ type asrBody struct {
 	Provider string `json:"provider"`
 	URL      string `json:"url"`
 	Model    string `json:"model"`
+	Language string `json:"language"`
 	// KeySet says a key exists without saying what it is.
 	KeySet bool `json:"keySet"`
 }
@@ -222,6 +223,7 @@ type patch struct {
 		URL      *string `json:"url"`
 		Model    *string `json:"model"`
 		Key      *string `json:"key"`
+		Language *string `json:"language"`
 	} `json:"asr"`
 }
 
@@ -253,6 +255,7 @@ func (s *Server) settingsBody(r *http.Request) settingsBody {
 			Provider: cfg.ASR.Provider,
 			URL:      cfg.ASR.URL,
 			Model:    cfg.ASR.Model,
+			Language: cfg.ASR.Language,
 			KeySet:   cfg.ASR.APIKey() != "",
 		},
 		Effective: effectiveASR{
@@ -306,6 +309,9 @@ func (s *Server) update(w http.ResponseWriter, r *http.Request) {
 		}
 		if incoming.ASR.Key != nil {
 			cfg.ASR.Key = strings.TrimSpace(*incoming.ASR.Key)
+		}
+		if incoming.ASR.Language != nil {
+			cfg.ASR.Language = strings.TrimSpace(*incoming.ASR.Language)
 		}
 	}
 

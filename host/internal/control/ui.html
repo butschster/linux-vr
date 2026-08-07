@@ -135,6 +135,17 @@ code { background: #171920; padding: 1px 6px; border-radius: 4px; }
       </div>
     </div>
 
+    <div class="field">
+      <label for="language">Language</label>
+      <input type="text" id="language" autocomplete="off" placeholder="ru — leave empty to let the model guess">
+    </div>
+    <p class="hint">
+      Worth setting. On one second of a tone, a local model answered
+      “(electronic music)” with no language and “[музыка]” with <code>ru</code> —
+      it detects from the audio, and for a short dictated phrase it guesses
+      wrong often enough to matter.
+    </p>
+
     <div class="row">
       <button id="test" class="ghost">Test it</button>
       <span class="grow muted" id="testResult"></span>
@@ -211,6 +222,7 @@ async function loadSettings() {
   $('provider').value = cfg.asr.provider || 'custom';
   $('url').value = cfg.asr.url || '';
   $('model').value = cfg.asr.model || '';
+  $('language').value = cfg.asr.language || '';
   // An existing key is never sent here, so the field stays empty and says so.
   // Leaving it empty on save means "keep it".
   $('key').placeholder = keySet ? 'saved — leave empty to keep it' : 'not set';
@@ -224,7 +236,7 @@ async function loadSettings() {
   $('warnings').innerHTML = warnings.join('');
   $('readonly').classList.toggle('hidden', editable);
 
-  for (const id of ['serverName','fps','qp','provider','url','model','key'])
+  for (const id of ['serverName','fps','qp','provider','url','model','key','language'])
     $(id).disabled = !editable;
   $('save').disabled = !editable;
   $('test').disabled = !editable;
@@ -254,6 +266,7 @@ async function save() {
       provider: $('provider').value,
       url: $('url').value,
       model: $('model').value,
+      language: $('language').value,
     },
   };
   // Only send the key when one was typed: an empty field means "unchanged", and

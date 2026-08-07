@@ -269,6 +269,16 @@ func (s *Service) transcribe(audio []byte) (string, error) {
 	if err := form.WriteField("model", asr.ModelName()); err != nil {
 		return "", err
 	}
+	if language := asr.Language; language != "" {
+		if err := form.WriteField("language", language); err != nil {
+			return "", err
+		}
+	}
+	// Explicit, because the default is the server's to choose and this parser
+	// only understands one shape. Both OpenAI and whisper.cpp accept it.
+	if err := form.WriteField("response_format", "json"); err != nil {
+		return "", err
+	}
 	part, err := form.CreateFormFile("file", "speech.wav")
 	if err != nil {
 		return "", err

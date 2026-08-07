@@ -133,7 +133,7 @@ can hold an API key:
   "allowRemoteConfig": false,
   "tray": true,
   "capture": { "device": "/dev/dri/card1", "fps": 60, "qp": 23, "sudo": true },
-  "asr": { "provider": "custom", "url": "", "key": "", "model": "" }
+  "asr": { "provider": "custom", "url": "", "key": "", "model": "", "language": "" }
 }
 ```
 
@@ -173,6 +173,30 @@ file with no dependencies.
 The model name defaults per provider (`whisper-1` for OpenAI,
 `whisper-large-v3-turbo` otherwise) because getting it wrong produces a 400 that
 explains nothing.
+
+**Set the language.** It is not a nicety. Measured against a local `whisper.cpp`
+on one second of a 220 Hz tone, the same audio both times:
+
+| `language` | What came back |
+|---|---|
+| unset | `" (electronic music)"` |
+| `ru` | `" [музыка]"` |
+
+The model detects the language from the audio, and for a short dictated phrase
+in a language it did not expect, it guesses wrong often enough to make dictation
+useless. An empty value still means "guess", for anyone who wants that.
+
+A working local setup, for reference — `whisper.cpp`'s server speaks a different
+path than OpenAI's, which the `custom` provider exists to allow:
+
+```json
+"asr": {
+  "provider": "custom",
+  "url": "http://127.0.0.1:9105/inference",
+  "model": "whisper-1",
+  "language": "ru"
+}
+```
 
 Environment variables still win over the file, so an existing shell profile
 keeps working:

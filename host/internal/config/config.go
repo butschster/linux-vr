@@ -92,6 +92,14 @@ type ASR struct {
 	URL      string `json:"url"`
 	Key      string `json:"key"`
 	Model    string `json:"model"`
+	// Language as an ISO code, or empty to let the model guess.
+	//
+	// Not a nicety. Measured against a local whisper.cpp on one second of a
+	// 220 Hz tone: with no language it answered " (electronic music)", with
+	// "ru" it answered " [музыка]". The model detects from the audio, and for
+	// short dictated phrases in a language it did not expect, the guess is
+	// wrong often enough to make the feature useless.
+	Language string `json:"language"`
 }
 
 // APIKey is the key to send. The environment wins over the file, so an existing

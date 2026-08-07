@@ -162,6 +162,17 @@ the port; find the owner before assuming the code is wrong.
 logs `client <address>, encoding` on accept. No line means the app connected
 somewhere else — a stale saved address, most likely.
 
+## Where the other skills take over
+
+This page is for a stack that is running but wrong. Two neighbours own the rest,
+and duplicating them here would only let the copies drift apart:
+
+- **`headset`** — adb cannot see the device, says `unauthorized`, the app
+  "started" but nothing happened, logcat evicted your lines, or a screenshot
+  came back black
+- **`install`** — putting a release on either half, the permissions the server
+  cannot grant itself, and what `doctor` is telling you
+
 ## Self-inflicted traps
 
 **`pkill -f <pattern>` kills your own shell** when the pattern appears in your
@@ -177,6 +188,9 @@ kill $(ss -tlnp | grep :9101 | grep -oP 'pid=\K[0-9]+')
 **Piping a long-running process into `tail` hides its output** until it exits.
 Redirect to a file instead.
 
-**Single-client servers refuse test connections.** The input agent serves one
-connection at a time; while the headset holds it, a test connection times out.
-Stop the client first or make the server concurrent.
+**A second viewer replaces the first, on video only.** The input service takes a
+goroutine per connection, so a test client and the headset coexist there. Capture
+does not: two `kmsgrab` captures of one CRTC cost twice the GPU for one picture,
+so a new connection on a monitor's port takes it over and the log says
+`a newer client took over`. If the headset's window goes black the moment you
+run a test `nc`, that is why, and it is deliberate.

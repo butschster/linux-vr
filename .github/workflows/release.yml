@@ -82,7 +82,10 @@ jobs:
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
         run: |
           cd client
-          ./gradlew :app:assembleRelease --no-daemon
+          # The tag is the version. Passing it in is what keeps the APK from
+          # reporting a number somebody forgot to edit.
+          ./gradlew :app:assembleRelease --no-daemon \
+            -PlinuxvrVersion="$GITHUB_REF_NAME"
           cp app/build/outputs/apk/release/app-release*.apk ../linux-vr.apk
 
       - uses: actions/upload-artifact@v7

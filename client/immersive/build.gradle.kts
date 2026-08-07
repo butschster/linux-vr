@@ -4,6 +4,26 @@ plugins {
 
 // The immersive OpenXR client. Its own application id so it can sit on the
 // headset next to the app people actually use: two APKs cannot share one.
+// The version comes from the tag, not from a number edited by hand.
+//
+// A release whose APK reports a different version than the tag it was cut from
+// is a release you cannot reason about — this shipped once as v1.0.0 with
+// versionName 0.2, and nothing caught it until the APK was installed and asked.
+//
+// versionCode has to increase for Android to accept an update, and it cannot be
+// derived from a semantic version without a rule, so the rule is here:
+// major * 10000 + minor * 100 + patch.
+val releaseVersion: String = (project.findProperty("linuxvrVersion") as String?)
+    ?.removePrefix("v")
+    ?.takeIf { it.isNotBlank() }
+    ?: "0.0.0-dev"
+
+fun versionCodeOf(version: String): Int {
+    val parts = version.substringBefore("-").split(".")
+    fun at(i: Int) = parts.getOrNull(i)?.toIntOrNull() ?: 0
+    return maxOf(1, at(0) * 10000 + at(1) * 100 + at(2))
+}
+
 android {
     namespace = "dev.butschster.linuxvr.immersive"
     compileSdk = 34
@@ -14,8 +34,8 @@ android {
         // Quest 3 / 3S run Android 12L
         minSdk = 32
         targetSdk = 34
-        versionCode = 1
-        versionName = "0.1"
+        versionCode = versionCodeOf(releaseVersion)
+        versionName = releaseVersion
 
         ndk {
             // Quest is arm64 only; other ABIs are dead weight

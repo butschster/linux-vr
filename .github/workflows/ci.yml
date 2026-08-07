@@ -86,13 +86,13 @@ jobs:
       # is for reading a build failure, not for installing. Releases are signed
       # by release.yml with the key held in the repository secrets.
       - name: Build
-        run: ./gradlew :app:assembleDebug --no-daemon
+        run: ./gradlew :app:assembleDebug --no-daemon -PlinuxvrVersion="0.0.0-${GITHUB_SHA::7}"
         working-directory: client
 
       # The immersive client is not what anyone installs, but it is in the tree
       # and it does break — it carries NDK and CMake, which the app does not.
       - name: Build the immersive client
-        run: ./gradlew :immersive:assembleDebug --no-daemon
+        run: ./gradlew :immersive:assembleDebug --no-daemon -PlinuxvrVersion="0.0.0-${GITHUB_SHA::7}"
         working-directory: client
 
       - uses: actions/upload-artifact@v7

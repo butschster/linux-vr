@@ -21,6 +21,11 @@ cmake-build-*/
 /assets/
 *.mp4
 *.png
+# …except the app's own artwork, which is source, not output.
+!client/app/src/main/res/**/*.png
+
+# The server binary, built by `make server`
+/host/linux-vr-server
 
 # External sources — cloned per the instructions in docs/gotchas.md
 vendor/

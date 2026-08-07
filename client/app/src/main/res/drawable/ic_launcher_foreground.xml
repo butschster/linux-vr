@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A screen and the headset in front of it — the whole product in two shapes.
+     Drawn inside the 72x72 safe zone of the 108x108 adaptive icon canvas, since
+     everything outside it is cropped by whichever mask the launcher applies. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- The monitor: outline only, so it reads as a frame around nothing rather
+         than as a filled block that competes with the headset. -->
+    <path
+        android:fillColor="#7FB4FF"
+        android:pathData="M26,28h56a4,4 0 0 1 4,4v30a4,4 0 0 1 -4,4h-56a4,4 0 0 1 -4,-4v-30a4,4 0 0 1 4,-4zM26,34v26h56v-26z" />
+    <path
+        android:fillColor="#7FB4FF"
+        android:pathData="M50,66h8v8h-8zM40,76h28v4h-28z" />
+
+    <!-- The headset, overlapping the screen's lower edge: what you put on to see
+         what is behind it. -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M44,58h34a6,6 0 0 1 6,6v10a6,6 0 0 1 -6,6h-8l-9,-5l-9,5h-8a6,6 0 0 1 -6,-6v-10a6,6 0 0 1 6,-6z" />
+    <path
+        android:fillColor="#12306E"
+        android:pathData="M48,64h26a3,3 0 0 1 3,3v6a3,3 0 0 1 -3,3h-26a3,3 0 0 1 -3,-3v-6a3,3 0 0 1 3,-3z" />
+    <path
+        android:fillColor="#3FA9F5"
+        android:pathData="M55,79h12v2h-12z" />
+</vector>

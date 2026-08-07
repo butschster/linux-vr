@@ -1,0 +1,23 @@
+[Unit]
+Description=linux-vr desktop server
+Documentation=https://github.com/vr-meta/linux-vr
+# The layout comes from mutter over the session bus, so there is nothing to
+# report until a graphical session exists.
+After=graphical-session.target
+PartOf=graphical-session.target
+
+[Service]
+ExecStart=@BINDIR@/linux-vr-server
+Restart=on-failure
+RestartSec=2
+
+# A user service on purpose. It asks mutter which monitors exist, which needs
+# the user's session bus; it pastes into the user's clipboard; and the pointer
+# it creates belongs in the user's session. Root has none of those.
+#
+# What it does need is membership of the `input` group for /dev/uinput, and a
+# password-less sudo rule for ffmpeg, since kmsgrab requires CAP_SYS_ADMIN.
+# `linux-vr-server doctor` says which of the two is missing.
+
+[Install]
+WantedBy=graphical-session.target

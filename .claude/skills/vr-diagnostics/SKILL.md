@@ -126,40 +126,41 @@ Behaviour beats arithmetic as a suspect. One real case: dragging the screen also
 dragged the desktop pointer, because the ray kept hitting the moving layer and
 positions kept being sent. The maths was correct all along.
 
-## Terminal client
+## The headset does not find the server
 
-Nothing here involves capture, encoding or the pointer — if the streamed desktop
-is broken, that is a different fault.
-
-**Does the agent answer at all, and is it the one you just edited?**
+Ask the server before touching the client — it says more than the app can.
 
 ```sh
-ss -ltnp | grep 9103          # who really holds the port
-./host/pty-agent.py --dump-context ~/repos/home/linux-vr    # what the bar would show
+linux-vr-server doctor        # every check here is a failure that has happened
+curl -s http://<host>:9099/v1/info | head -40
 ```
 
-A second agent that failed to bind dies quietly while the first keeps serving,
-so an edit appears to have done nothing. Check the owner before the code.
+The `services` block is the answer to most of it. Capture needs `ffmpeg`, a DRM
+device and a password-less sudo rule; the pointer needs `/dev/uinput`. Any of
+them missing looks identical from inside a window — black picture, dead pointer.
 
-**Blank window, bar says "no host — retrying".** The client retries every two
-seconds and reports the reason; read it. Usually the agent is not running, or
-`host.txt` names the wrong address.
+**Nothing answers the probe.** Discovery is a UDP broadcast to `:9099`, answered
+unicast. Reproduce it from the desk rather than from the headset:
 
-**Bar shows nothing but the path.** The context arrived without buttons, or did
-not arrive. `--dump-context` on the host is the same code path; if it produces
-groups there and nothing appears in the headset, the fault is on the client
-side.
+```sh
+python3 -c "
+import socket, json
+s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+s.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1); s.settimeout(2)
+s.sendto(b'LINUXVR-DISCOVER 1', ('255.255.255.255', 9099))
+print(s.recvfrom(2048))"
+```
 
-**Wrong buttons for what is running.** The classifier reads
-`/proc/<pgid>/cmdline` of the pty's foreground process group. Reproduce on the
-host: run the tool in a terminal and check what its command line actually looks
-like — tools launched through an interpreter put the name that matters after
-`argv[0]`, and that is what `TOOL_NAMES` matches against.
+Silence here with a running server means the network drops broadcasts — guest
+Wi-Fi and AP isolation both do. Add the address by hand instead.
 
-**Text arrives but the shell behaves oddly** — no prompt colours, missing
-aliases, `claude` warning about an inherited session. The shell's environment is
-built in `Session.start`; it is not a login shell, and Claude Code's own markers
-are stripped there.
+**The server started but two of its ports did not.** It logs
+`address already in use` and keeps going with what it has. Something else holds
+the port; find the owner before assuming the code is wrong.
+
+**The window opens black.** Check whether the server ever saw the connection: it
+logs `client <address>, encoding` on accept. No line means the app connected
+somewhere else — a stale saved address, most likely.
 
 ## Self-inflicted traps
 

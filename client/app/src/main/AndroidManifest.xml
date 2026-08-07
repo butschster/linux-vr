@@ -1,59 +1,110 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- 6DoF tracking is required: the layer is pinned to world coordinates -->
-    <uses-feature
-        android:name="android.hardware.vr.headtracking"
-        android:required="true"
-        android:version="1" />
-
-    <!-- Without this line Horizon OS blocks launch with a "controllers
-         required" dialog whenever the user is working with hands. For a VR
-         desktop that is the normal case, not the exception: the controllers
-         are on the desk. -->
-    <uses-feature
-        android:name="oculus.software.handtracking"
-        android:required="false" />
-    <uses-permission android:name="com.oculus.permission.HAND_TRACKING" />
-
-    <!-- Passthrough is gated behind this declaration: without it the
-         XR_FB_passthrough extension is not even listed by the runtime, and the
-         only environment blend mode offered is OPAQUE. A screen floating in the
-         real room reads as a window; the same screen on black reads as a game
-         that has taken over the headset. -->
-    <uses-feature
-        android:name="com.oculus.feature.PASSTHROUGH"
-        android:required="false" />
-
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Discovery is a UDP broadcast; this is needed to find which network we are
+         on and what its broadcast address is. -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- Dictation. Requested at runtime as well; without the runtime grant the
+         recorder silently returns no samples rather than failing loudly. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+
+    <!-- No VR features are declared on purpose. Declaring headtracking or an
+         immersive intent category is what makes Horizon OS launch an app
+         exclusively; a plain 2D app gets a window instead, and windows
+         multitask. -->
 
     <application
         android:allowBackup="false"
-        android:label="linux-vr">
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:label="linux-vr"
+        android:theme="@android:style/Theme.Material.NoActionBar"
+        android:usesCleartextTraffic="true">
+        <!-- Cleartext is not an oversight. The control API is plain HTTP to a
+             machine on the same LAN, and targetSdk 34 blocks that by default —
+             which shows up as a connection that fails before it is attempted. -->
 
-        <meta-data
-            android:name="com.oculus.supportedDevices"
-            android:value="quest3|quest3s" />
-
+        <!-- The front door: which machine to work on. The only launcher entry,
+             however many monitors any host has. -->
         <activity
-            android:name="android.app.NativeActivity"
+            android:name=".ServersActivity"
             android:exported="true"
-            android:launchMode="singleTask"
-            android:screenOrientation="landscape"
-            android:excludeFromRecents="false"
-            android:configChanges="density|keyboard|keyboardHidden|navigation|orientation|screenLayout|screenSize|uiMode"
-            android:theme="@android:style/Theme.Black.NoTitleBar.Fullscreen">
-
-            <meta-data
-                android:name="android.app.lib_name"
-                android:value="linuxvr" />
+            android:resizeableActivity="true"
+            android:windowSoftInputMode="adjustResize"
+            android:configChanges="density|keyboard|keyboardHidden|navigation|orientation|screenLayout|screenSize|uiMode">
+            <layout
+                android:defaultWidth="900dp"
+                android:defaultHeight="700dp"
+                android:minWidth="480dp"
+                android:minHeight="400dp"
+                android:gravity="center" />
 
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
-                <!-- IMMERSIVE_HMD launches straight into VR, skipping the 2D panel -->
-                <category android:name="org.khronos.openxr.intent.category.IMMERSIVE_HMD" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+        </activity>
+
+        <!-- One connected machine. Its own task so two machines can be open at
+             once, and so it stays around as the place you go for another screen. -->
+        <activity
+            android:name=".SessionActivity"
+            android:exported="false"
+            android:documentLaunchMode="always"
+            android:resizeableActivity="true"
+            android:configChanges="density|keyboard|keyboardHidden|navigation|orientation|screenLayout|screenSize|uiMode">
+            <layout
+                android:defaultWidth="900dp"
+                android:defaultHeight="760dp"
+                android:minWidth="480dp"
+                android:minHeight="400dp"
+                android:gravity="center" />
+        </activity>
+
+        <!-- A window per screen. documentLaunchMode="always" is what gives each
+             instance its own task, and therefore its own window in the shell. -->
+        <activity
+            android:name=".PanelActivity"
+            android:exported="false"
+            android:documentLaunchMode="always"
+            android:resizeableActivity="true"
+            android:configChanges="density|keyboard|keyboardHidden|navigation|orientation|screenLayout|screenSize|uiMode">
+
+            <!-- Sized to match the stream, not merely to look right.
+                 At 1280dp the shell gave a 1600x900 window for a 2560x1440
+                 stream: everything was downscaled to 0.625 before it reached
+                 the eye, turning a 15 px font into 9 px. Text lost there cannot
+                 be recovered by enlarging it afterwards.
+
+                 The shell renders roughly 1.25 px per dp here, so 2048dp lands
+                 near 2560 px and the picture arrives one pixel per pixel. -->
+            <layout
+                android:defaultWidth="2048dp"
+                android:defaultHeight="1152dp"
+                android:minWidth="480dp"
+                android:minHeight="270dp"
+                android:gravity="center" />
+        </activity>
+
+        <!-- Controls in a window of their own rather than over the desktop:
+             the shell already places and stacks windows, so the user puts this
+             one where it does not get in the way. -->
+        <activity
+            android:name=".ControlActivity"
+            android:exported="false"
+            android:windowSoftInputMode="adjustResize|stateHidden"
+            android:documentLaunchMode="always"
+            android:resizeableActivity="true"
+            android:taskAffinity="dev.butschster.linuxvr.controls"
+            android:label="linux-vr controls"
+            android:configChanges="density|keyboard|keyboardHidden|navigation|orientation|screenLayout|screenSize|uiMode">
+            <layout
+                android:defaultWidth="820dp"
+                android:defaultHeight="96dp"
+                android:minWidth="360dp"
+                android:minHeight="72dp"
+                android:gravity="bottom" />
         </activity>
     </application>
 

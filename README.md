@@ -32,6 +32,10 @@ not a computer that has to keep up. Walk to the sofa; the session does not care.
 opens. Close the window and the machine goes quiet again — which on a laptop is
 the difference between warm and hot.
 
+**It tells you it is running.** An icon in the desktop's status area, which
+changes when a window opens and lists which screen is going to which headset.
+Click it for the settings page.
+
 **A settings page that comes with it.** The server has a small web UI on
 `http://localhost:9099`: what the headset would see, which screens are being
 encoded right now, which parts of the machine are not working and why, and the

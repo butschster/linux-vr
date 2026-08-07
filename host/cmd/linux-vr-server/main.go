@@ -25,12 +25,14 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/vr-meta/linux-vr/host/internal/capture"
 	"github.com/vr-meta/linux-vr/host/internal/config"
 	"github.com/vr-meta/linux-vr/host/internal/control"
 	"github.com/vr-meta/linux-vr/host/internal/input"
 	"github.com/vr-meta/linux-vr/host/internal/monitors"
+	"github.com/vr-meta/linux-vr/host/internal/tray"
 	"github.com/vr-meta/linux-vr/host/internal/voice"
 )
 
@@ -101,7 +103,7 @@ Options:
 // ---------------------------------------------------------------------- serve
 
 func serve(cfg config.Config, configPath string) {
-	layout, err := monitors.Detect()
+	layout, err := detect()
 	if err != nil {
 		log.Fatalf("%v\n\nRun `linux-vr-server doctor` to see what is missing.", err)
 	}
@@ -178,6 +180,16 @@ func serve(cfg config.Config, configPath string) {
 	}
 	go api.ServeDiscovery()
 
+	// The icon is the only thing this server has that says "I am running" to
+	// someone who is not wearing the headset. Never fatal: a host reached only
+	// over ssh has no session bus, and refusing to serve a desktop because
+	// nothing can draw an icon would be absurd.
+	if cfg.Tray && tray.Available() {
+		go tray.Start(live.trayState)
+	} else if cfg.Tray {
+		log.Printf("[tray] no desktop session here, running without an icon")
+	}
+
 	address := net.JoinHostPort(cfg.Bind, strconv.Itoa(config.ControlPort))
 	listener, err := net.Listen("tcp", address)
 	if err != nil {
@@ -203,6 +215,53 @@ type settings struct {
 	path    string
 	capture *capture.Service
 	voice   *voice.Service
+}
+
+// trayState is what the status icon shows: who is watching, and the address to
+// type into a headset that did not find this machine by itself.
+func (s *settings) trayState() tray.State {
+	cfg := s.get()
+	state := tray.State{
+		Name:    cfg.Name,
+		Local:   fmt.Sprintf("http://localhost:%d", config.ControlPort),
+		Address: fmt.Sprintf("%s:%d", localAddress(), config.ControlPort),
+	}
+	for _, c := range s.capture.Connections() {
+		where := c.Connector
+		if where == "" {
+			where = fmt.Sprintf("screen %d", c.Monitor)
+		}
+		state.Streams = append(state.Streams, fmt.Sprintf("%s → %s", where, c.Client))
+	}
+	// One problem, not a list: the icon has a tooltip, not a report, and the
+	// first thing that is broken is the one worth fixing.
+	if available, detail := s.capture.Available(); !available {
+		state.Problem = "no video: " + detail
+	} else if s.voice != nil {
+		if available, detail := s.voice.Available(); !available {
+			state.Problem = "no dictation: " + detail
+		}
+	}
+	return state
+}
+
+// localAddress is the address a headset on the same network would use.
+//
+// Found by asking the routing table which source address a packet to the
+// outside would take, rather than by listing interfaces: on a machine with
+// docker, wireguard and two physical NICs, the list is long and the answer is
+// not the first entry.
+func localAddress() string {
+	conn, err := net.Dial("udp", "192.0.2.1:9")
+	if err != nil {
+		return "this machine"
+	}
+	defer conn.Close()
+	host, _, err := net.SplitHostPort(conn.LocalAddr().String())
+	if err != nil {
+		return "this machine"
+	}
+	return host
 }
 
 func (s *settings) get() config.Config {
@@ -247,6 +306,29 @@ func (s *settings) status(base map[string]control.Service) map[string]control.Se
 			Port: config.VoicePort, Available: available, Detail: detail}
 	}
 	return current
+}
+
+// detect reads the monitor layout, waiting for the desktop if it has to.
+//
+// A user service starts when the session does, which can be before gnome-shell
+// is answering on the bus — and mutter also goes briefly unresponsive under
+// load, which was observed on this machine. Either way the layout arrives a few
+// seconds later, and exiting instead of waiting turns a hiccup into a service
+// that has to be restarted by hand.
+func detect() (monitors.Layout, error) {
+	const attempts = 6
+	var err error
+	for attempt := 1; attempt <= attempts; attempt++ {
+		var layout monitors.Layout
+		if layout, err = monitors.Detect(); err == nil {
+			return layout, nil
+		}
+		if attempt < attempts {
+			log.Printf("[monitors] %v — retrying (%d/%d)", err, attempt, attempts)
+			time.Sleep(5 * time.Second)
+		}
+	}
+	return monitors.Layout{}, err
 }
 
 func listenAndServe(name, bind string, port int, serve func(net.Listener) error) {
@@ -344,6 +426,23 @@ func doctor(cfg config.Config) {
 					m.Index, m.Connector, m.CRTC, m.Port)
 			}
 		}
+	}
+
+	fmt.Println("\nstatus icon")
+	switch {
+	case !cfg.Tray:
+		fmt.Println("  --    turned off in the configuration")
+	case !tray.Available():
+		fmt.Println("  --    no desktop session here; the server runs fine without an icon")
+	case tray.PanelPresent():
+		fmt.Println("  ok    the desktop has somewhere to put it")
+	default:
+		// Found the hard way: with the extension disabled the icon registers
+		// on the bus and is rendered by nothing, which looks identical to a
+		// server that failed to start.
+		fmt.Println("  FAIL  nothing renders tray icons on this desktop")
+		fmt.Println("        gnome-extensions enable ubuntu-appindicators@ubuntu.com")
+		ok = false
 	}
 
 	fmt.Println("\ndictation")

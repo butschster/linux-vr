@@ -93,6 +93,34 @@ anywhere in this project. Loopback is the only boundary available without
 inventing one. If that is not what you want, set `"allowRemoteConfig": true` and
 understand what you are accepting.
 
+## The status icon
+
+A user service has no window, so "is it running, and is anyone watching" is
+otherwise a question you answer with `systemctl` and a log. The icon answers it
+by existing, changes when a window opens, and its menu lists which screen is
+going where. Clicking it opens the settings page; the menu can also put the
+address in the clipboard for typing into a headset that did not find this
+machine by itself.
+
+It is a StatusNotifierItem over D-Bus. **On Ubuntu the extension that renders
+those is not always enabled**, and the failure is silent in the worst way: the
+item registers on the bus correctly and nothing draws it, which from the outside
+is indistinguishable from a server that did not start. Found here, on this
+machine, after the icon simply never appeared.
+
+```sh
+gnome-extensions enable ubuntu-appindicators@ubuntu.com
+```
+
+`doctor` checks for it now. The server also waits up to two minutes for a status
+area to show up before giving up, because a user service starts with the session
+and the extension loads after the shell — registering immediately would fail
+once and leave no icon for the rest of the login.
+
+Set `"tray": false` to turn it off. On a machine with no session bus — a VPS, a
+container, anything reached over ssh — it is skipped and the server says so
+once.
+
 ## Configuration
 
 `~/.config/linuxvr/config.json`, written on first run, mode **0600** because it
@@ -103,6 +131,7 @@ can hold an API key:
   "name": "beelink",
   "bind": "0.0.0.0",
   "allowRemoteConfig": false,
+  "tray": true,
   "capture": { "device": "/dev/dri/card1", "fps": 60, "qp": 23, "sudo": true },
   "asr": { "provider": "custom", "url": "", "key": "", "model": "" }
 }

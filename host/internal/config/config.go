@@ -51,6 +51,10 @@ type Config struct {
 	// loopback is the only boundary available without inventing one.
 	AllowRemoteConfig bool `json:"allowRemoteConfig"`
 
+	// Tray puts an icon in the desktop's status area. On by default, because a
+	// service with no window is otherwise invisible until something goes wrong.
+	Tray bool `json:"tray"`
+
 	Capture Capture `json:"capture"`
 	ASR     ASR     `json:"asr"`
 }
@@ -141,6 +145,7 @@ func Default() Config {
 	return Config{
 		Name: hostname(),
 		Bind: "0.0.0.0",
+		Tray: true,
 		Capture: Capture{
 			Device: firstRenderNode(),
 			FPS:    60,

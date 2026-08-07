@@ -15,6 +15,7 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"sort"
 	"strconv"
 	"sync"
 	"syscall"
@@ -35,8 +36,20 @@ type Service struct {
 }
 
 type encoder struct {
-	cmd  *exec.Cmd
-	conn net.Conn
+	cmd       *exec.Cmd
+	conn      net.Conn
+	connector string
+	since     time.Time
+}
+
+// Connection is one window watching one screen. Reported so the tray icon and
+// the settings page can answer "is anything actually looking at this machine",
+// which is otherwise a question you answer by reading the log.
+type Connection struct {
+	Monitor   int       `json:"monitor"`
+	Connector string    `json:"connector"`
+	Client    string    `json:"client"`
+	Since     time.Time `json:"since"`
 }
 
 func New(cfg config.Capture, bind string, layout monitors.Layout) *Service {
@@ -120,7 +133,7 @@ func (s *Service) stream(m monitors.Monitor, conn net.Conn) {
 	}
 	log.Printf("[capture] monitor %d: client %s, encoding", m.Index, conn.RemoteAddr())
 
-	s.replace(m.Index, &encoder{cmd: cmd, conn: conn})
+	s.replace(m.Index, &encoder{cmd: cmd, conn: conn, connector: m.Connector, since: time.Now()})
 
 	// The client never sends anything on this socket, so a read returning is
 	// how a closed window is noticed. Without it, an encoder for a window that
@@ -181,8 +194,7 @@ func (s *Service) settings() config.Capture {
 	return s.cfg
 }
 
-// Streaming reports which monitors are being encoded right now, for the
-// control API.
+// Streaming reports which monitors are being encoded right now.
 func (s *Service) Streaming() map[int]bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -191,6 +203,29 @@ func (s *Service) Streaming() map[int]bool {
 		active[index] = true
 	}
 	return active
+}
+
+// Connections is the same answer with the client attached.
+func (s *Service) Connections() []Connection {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	found := make([]Connection, 0, len(s.current))
+	for index, e := range s.current {
+		client := ""
+		if e.conn != nil {
+			// The port half is noise here: what matters is which headset.
+			if host, _, err := net.SplitHostPort(e.conn.RemoteAddr().String()); err == nil {
+				client = host
+			} else {
+				client = e.conn.RemoteAddr().String()
+			}
+		}
+		found = append(found, Connection{
+			Monitor: index, Connector: e.connector, Client: client, Since: e.since,
+		})
+	}
+	sort.Slice(found, func(i, j int) bool { return found[i].Monitor < found[j].Monitor })
+	return found
 }
 
 // command builds the encoder invocation.

@@ -76,8 +76,6 @@ client/app        the app — server manager, then a window per screen
 client/immersive  native OpenXR app (Gradle + CMake + NDK, no Unity)
 packaging/        the systemd user unit
 docs/             measurements, decisions, traps — read before changing anything
-vendor/           external sources, not in git (see docs/gotchas.md)
-assets/           generated test videos, not in git
 ```
 
 ### Key server files

@@ -16,8 +16,10 @@ cmake-build-*/
 *.iml
 .vscode/
 
-# Generated test material — produced by scripts in host/, hundreds of megabytes.
-# Anchored to the root so it does not swallow the app's own assets directory.
+# Generated test material, hundreds of megabytes. Anchored to the root so it
+# does not swallow the app's own assets directory. Nothing needs it any more —
+# the file-playback path predates live streaming — but a stray render should
+# still never reach a commit.
 /assets/
 *.mp4
 *.png
@@ -27,7 +29,7 @@ cmake-build-*/
 # The server binary, built by `make server`
 /host/linux-vr-server
 
-# External sources — cloned per the instructions in docs/gotchas.md
+# External sources, if anything is ever cloned here again
 vendor/
 
 # Secrets — nothing should reach here anyway, but just in case

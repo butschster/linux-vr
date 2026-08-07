@@ -200,7 +200,19 @@ def favorites(limit=14):
             "last": int(entry.get("last", 0)),
         })
     rows.sort(key=lambda r: (-r["count"], -r["last"]))
-    return rows[:limit]
+    rows = rows[:limit]
+
+    # Two projects can share a basename — this machine has `home/terminal` and
+    # `cve-tools/terminal` — and two identical buttons are worse than a long one.
+    seen = {}
+    for row in rows:
+        seen.setdefault(row["label"], []).append(row)
+    for label, group in seen.items():
+        if len(group) > 1:
+            for row in group:
+                parent = os.path.basename(os.path.dirname(row["path"]))
+                row["label"] = f"{parent}/{label}" if parent else label
+    return rows
 
 
 def project_root(cwd):
@@ -294,32 +306,36 @@ def key(label, send, style="key", enter=False, hint=None):
 # `enter` decides whether pressing the button runs the line or only types it.
 # Typing without running is deliberate for anything you would want to add words
 # to — a skill invocation, a git command with a path.
+# The first slot of every set is "get out of this program". That is the button
+# reached for under mild panic, and panic is when position is all you have.
+#
+# Keys that every program needs — Esc, Enter, Tab, ^C, ^D, backspace, arrows —
+# are NOT here. The client owns those and keeps them on a fixed side that context
+# never rebuilds. Duplicating them here would put the same key in two places, and
+# then neither is the one the hand learns.
 ACTIONS = {
     "claude": lambda ctx: [
-        key("Esc", ESC, "warn", hint="interrupt"),
         key("⇧Tab", ESC + "[Z", "key", hint="cycle mode"),
+        key("1", "1", "key", hint="permission prompt: yes"),
+        key("2", "2", "key", hint="permission prompt: yes, don't ask again"),
+        key("3", "3", "key", hint="permission prompt: no"),
         key("/", "/", "key", hint="commands"),
         key("!", "!", "key", hint="bash"),
         key("#", "#", "key", hint="memory"),
-        key("^C", "\x03", "warn", hint="stop"),
         key("/clear", "/clear", "cmd", enter=True),
         key("/compact", "/compact", "cmd", enter=True),
         key("/resume", "/resume", "cmd", enter=True),
-    ] + [
-        key("/" + s["name"], "/" + s["name"] + " ", "skill", hint=s["desc"][:80])
-        for s in ctx["skills"]
     ],
     "codex": lambda ctx: [
-        key("Esc", ESC, "warn", hint="interrupt"),
-        key("^C", "\x03", "warn"),
         key("/", "/", "key"),
-        key("Tab", "\t", "key"),
+        key("1", "1", "key"),
+        key("2", "2", "key"),
+        key("3", "3", "key"),
     ],
     "vim": lambda ctx: [
-        key("Esc", ESC, "warn"),
+        key(":q!", ":q!", "warn", enter=True, hint="quit, discarding"),
         key(":w", ":w", "cmd", enter=True),
         key(":wq", ":wq", "cmd", enter=True),
-        key(":q!", ":q!", "warn", enter=True),
         key("/", "/", "key", hint="search"),
         key("u", "u", "key", hint="undo"),
         key("dd", "dd", "key"),
@@ -336,22 +352,23 @@ ACTIONS = {
     ],
     "tui": lambda ctx: [
         key("q", "q", "warn", hint="quit"),
-        key("Enter", "\r", "key"),
-        key("Tab", "\t", "key"),
         key("/", "/", "key", hint="filter"),
         key("r", "r", "key", hint="reload"),
     ],
     "python": lambda ctx: [
-        key("^D", "\x04", "warn", hint="exit"),
-        key("^C", "\x03", "warn"),
-        key("exit()", "exit()", "cmd", enter=True),
+        key("exit()", "exit()", "cmd", enter=True, hint="quit"),
     ],
     "nano": lambda ctx: [
-        key("^O", "\x0f", "cmd", hint="write"),
         key("^X", "\x18", "warn", hint="exit"),
+        key("^O", "\x0f", "cmd", hint="write"),
         key("^W", "\x17", "key", hint="search"),
     ],
 }
+
+# git pipes almost everything through a pager, so `git log` with an empty bar is
+# a screen you cannot leave. The same is true of anything unrecognised: a program
+# that took over the terminal is far more likely to be pager-like than not.
+FALLBACK_TOOL = "pager"
 
 
 def shell_actions(ctx):
@@ -374,28 +391,32 @@ def favorite_actions(ctx):
     ]
 
 
-# Always there, whatever is in front — the keys a terminal cannot be used
-# without and that no soft keyboard offers reliably.
-def common_actions(ctx):
-    if ctx["tool"] is None:
-        return [
-            key("Enter", "\r", "key"),
-            key("Tab", "\t", "key"),
-            key("^C", "\x03", "warn"),
-            key("^L", "\x0c", "key", hint="clear"),
-            key("^R", "\x12", "key", hint="history search"),
-            key("↑", ESC + "[A", "key", hint="previous command"),
-            key("claude", "claude", "cmd", enter=True),
-            key("git status", "git status", "cmd", enter=True),
-            key("ls -la", "ls -la", "cmd", enter=True),
-            key("cch", "cch", "cmd", enter=True, hint="Claude Code panel"),
-            key("cgit", "cgit", "cmd", enter=True, hint="git panel"),
-        ]
+# Commands, not keys: these are things to run, and they belong with the rest of
+# the content on the dynamic side. The keys they used to sit beside are the
+# client's now.
+def command_actions(ctx):
+    if ctx["tool"] is not None:
+        return []
     return [
-        key("Enter", "\r", "key"),
-        key("Tab", "\t", "key"),
-        key("^C", "\x03", "warn"),
-        key("^D", "\x04", "warn"),
+        key("claude", "claude", "cmd", enter=True),
+        key("git status", "git status", "cmd", enter=True),
+        key("ls -la", "ls -la", "cmd", enter=True),
+        key("^R", "\x12", "key", hint="history search"),
+        key("cch", "cch", "cmd", enter=True, hint="Claude Code panel"),
+        key("cgit", "cgit", "cmd", enter=True, hint="git panel"),
+    ]
+
+
+def skill_actions(ctx):
+    """Project skills first and marked as such; the global ones are not this project."""
+    project = [s for s in ctx["skills"] if s["origin"] == "project"]
+    user = [s for s in ctx["skills"] if s["origin"] != "project"]
+    return [
+        key("/" + s["name"], "/" + s["name"] + " ", "skill", hint=s["desc"][:100])
+        for s in project
+    ] + [
+        key("/" + s["name"], "/" + s["name"] + " ", "key", hint="global · " + s["desc"][:90])
+        for s in user
     ]
 
 
@@ -451,6 +472,11 @@ class Session:
             # the headset is not a child of anything, so those go.
             for name in [k for k in env if k.startswith("CLAUDE_CODE_") or k == "CLAUDECODE"]:
                 env.pop(name, None)
+            # SIGCHLD set to SIG_IGN survives exec — unlike a handler, which does not.
+            # Inheriting it means every descendant that reaps its own children gets
+            # ECHILD from waitpid instead of an exit status, because the kernel has
+            # already reaped them. Claude Code's hooks fail exactly this way.
+            signal.signal(signal.SIGCHLD, signal.SIG_DFL)
             try:
                 # Not a login shell: on a pty bash is interactive already and reads
                 # .bashrc, which is where the prompt and the aliases live. Asking for
@@ -526,20 +552,18 @@ class Session:
             "skills": self.cache["skills"],
         }
 
-        # The bar in three groups, in the order they are used: what is specific
-        # to the program in front, then where to go, then the keys that always
-        # apply.
-        if tool and tool in ACTIONS:
-            primary = ACTIONS[tool](ctx)
-        elif tool:
-            primary = []
+        # Groups in the order they are used. The keys that apply everywhere are
+        # absent on purpose: the client owns those and never rebuilds them.
+        if tool:
+            primary = ACTIONS.get(tool, ACTIONS[FALLBACK_TOOL])(ctx)
         else:
             primary = shell_actions(ctx)
 
         ctx["groups"] = [
-            {"name": "tool" if tool else "dirs", "actions": primary},
-            {"name": "favorites", "actions": [] if tool else favorite_actions(ctx)},
-            {"name": "common", "actions": common_actions(ctx)},
+            {"name": name if tool else "go to", "actions": primary},
+            {"name": "skills", "actions": skill_actions(ctx) if tool == "claude" else []},
+            {"name": "projects", "actions": [] if tool else favorite_actions(ctx)},
+            {"name": "run", "actions": command_actions(ctx)},
         ]
         return ctx
 
@@ -646,6 +670,14 @@ class Session:
                 os.kill(self.pid, signal.SIGHUP)
             except OSError:
                 pass
+            # Reap it. Nothing does this for us any more — see the note in serve().
+            for _ in range(20):
+                try:
+                    if os.waitpid(self.pid, os.WNOHANG)[0]:
+                        break
+                except OSError:
+                    break
+                time.sleep(0.05)
         if self.fd >= 0:
             try:
                 os.close(self.fd)
@@ -680,7 +712,11 @@ def serve(port, cwd, shell):
     # Sessions outlive their client's window only as long as the socket: a
     # closed window is a closed shell, which keeps the model simple. Detached
     # sessions are what tmux is for, and it runs inside this just fine.
-    signal.signal(signal.SIGCHLD, signal.SIG_IGN)
+    #
+    # Shells are reaped explicitly when their session ends. Setting SIGCHLD to
+    # SIG_IGN would be shorter and is what an earlier version did — but that
+    # disposition is inherited through exec, and every descendant that waits on
+    # its own children then gets ECHILD instead of an exit status.
 
     while True:
         conn, addr = server.accept()
@@ -709,9 +745,9 @@ def main():
             "skills": skills(root),
         }
         ctx["groups"] = [
-            {"name": "dirs", "actions": shell_actions(ctx)},
-            {"name": "favorites", "actions": favorite_actions(ctx)},
-            {"name": "common", "actions": common_actions(ctx)},
+            {"name": "go to", "actions": shell_actions(ctx)},
+            {"name": "projects", "actions": favorite_actions(ctx)},
+            {"name": "run", "actions": command_actions(ctx)},
         ]
         print(json.dumps(ctx, indent=2, ensure_ascii=False))
         return

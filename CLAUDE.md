@@ -159,9 +159,16 @@ on the device.
 
 Full list with notes: [`docs/references.md`](docs/references.md).
 
-**Unresolved and not to be guessed:** whether a Spatial SDK app multitasks or
-takes the headset. It decides whether curved, app-controlled panels are
-available without giving up coexistence with other apps.
+**Answered, with the confidence stated:** a Spatial SDK app places its panels
+precisely, and the price is coexistence — the window layout you multitask in is
+the Home environment, and `createPanelEntity`'s freedom applies inside your own
+immersive scene. That is assembled from five documented facts, not quoted from
+one sentence; the sources and the assembly are in
+[`docs/references.md`](docs/references.md).
+
+The same section settles the related question: **a 2D app cannot place its own
+window at all.** Size is the only window property it controls. Do not spend time
+looking for an API; the user places windows, and "pin to space" makes it stick.
 
 ## Platform traps
 

@@ -42,6 +42,26 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- The bar in a window of its own, so the shell sizes it independently.
+             Its buttons wrap, so a wider or taller window shows more of them —
+             which a strip pinned to the terminal's width could never do. -->
+        <activity
+            android:name=".BarActivity"
+            android:exported="false"
+            android:documentLaunchMode="always"
+            android:resizeableActivity="true"
+            android:taskAffinity="dev.butschster.linuxvr.term.bar"
+            android:label="linux-vr bar"
+            android:windowSoftInputMode="adjustResize|stateHidden"
+            android:configChanges="density|keyboard|keyboardHidden|navigation|orientation|screenLayout|screenSize|uiMode">
+            <layout
+                android:defaultWidth="1150dp"
+                android:defaultHeight="460dp"
+                android:minWidth="700dp"
+                android:minHeight="320dp"
+                android:gravity="bottom" />
+        </activity>
     </application>
 
 </manifest>
